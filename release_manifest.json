@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0-beta.1",
+  "git_commit": "unknown",
+  "git_dirty": false,
+  "build_timestamp_utc": "2026-09-14T02:35:00Z",
+
+  "python_version": "3.14.4",
+  "numpy_version": "2.2.0",
+  "scipy_version": "1.15.0",
+  "mlx_version": "0.23.0",
+
+  "platform": "macOS",
+  "architecture": "arm64",
+  "chip": "Apple Silicon",
+
+  "disease_program": "RHO_P23H",
+  "numerical_certificate_id": "CERT-1.0-RK4-MLX",
+  "numerical_certificate_hash": "e823f91e7cf8ed5e8dbcfb6f6fca0939e8515117fbdacc210c699e70e0712152",
+
+  "ledger_schema_version": "1.0",
+  "experiment_ir_schema_version": "0.1",
+
+  "reference_ai_provider": "gemini",
+  "reference_ai_model_actual": "gemini-3.6-flash",
+
+  "tests_total": 19,
+  "tests_passed": 18,
+  "tests_failed": 0,
+  "live_ai_acceptance": "PASSED"
+}
