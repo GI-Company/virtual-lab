@@ -62,6 +62,8 @@ class InstrumentsWorkspace(QWidget):
         
         self.pending_capture_request_id: Optional[str] = None
         
+        self.device_states = {} # local track if needed, but registry is primary
+        
         self._init_ui()
         self._connect_signals()
 
@@ -286,6 +288,8 @@ class InstrumentsWorkspace(QWidget):
             f"Protocol\n1\n\n"
             f"VirtualLab\n{__version__}"
         )
+        # We will use this label only for the gateway info. 
+        # Device details will be pushed into lbl_diagnostics.
         self.lbl_gateway_info.setText(info)
         
         if d_status == DiscoveryStatus.FAILED:
@@ -328,14 +332,7 @@ class InstrumentsWorkspace(QWidget):
             self._stop_session(reason="Instrument disconnected mid-session")
 
     def _on_instrument_connected(self, inst_id, address):
-        self.current_state = "CONNECTED"
         self.current_instrument = inst_id
-        self.lbl_status.setText("● CONNECTED")
-        self.lbl_status.setStyleSheet("font-weight: bold; color: #22c55e;")
-        self.lbl_device_info.setText(f"<b>{inst_id}</b><br/>UNVERIFIED DEVICE IDENTITY<br/>Address: {address}")
-        self.btn_session.setEnabled(True)
-        self.btn_capture.setEnabled(True)
-        self.display_timer.start()
         
         self.workspace.ledger.append(
             event_id=f"EVT-{int(time.time()*1000)}",
@@ -351,7 +348,8 @@ class InstrumentsWorkspace(QWidget):
             event_type="INSTRUMENT_DISCONNECTED",
             payload={"instrument_id": inst_id}
         )
-        self._set_disconnected_state()
+        if self.current_instrument == inst_id:
+            self._set_disconnected_state()
 
     def _on_measurement(self, measurement: Measurement):
         mt = measurement.quantity
@@ -516,25 +514,72 @@ class InstrumentsWorkspace(QWidget):
                 self.optical_panel.process_live_frame(frame)
 
     def _update_ui(self):
-        # Diagnostics
-        parser = self.gateway.decoder
-        cam_parser = self.gateway.camera_decoder
-        diag_text = (
-            f"--- SENSORS ---\n"
-            f"Raw pkts: {parser.total_received}\n"
-            f"Decoded:  {parser.total_decoded}\n"
-            f"Rejected: {parser.total_rejected}\n"
-            f"Last typ: {parser.last_measurement_type}\n"
-            f"Last err: {parser.last_error or 'None'}\n\n"
-            f"--- CAMERA ---\n"
-            f"Conn:     {len(self.gateway.camera_clients)}\n"
-            f"Msg Recv: {self.gateway.camera_binary_messages_received}\n"
-            f"Decoded:  {cam_parser.total_decoded}\n"
-            f"Rejected: {cam_parser.total_rejected}\n"
-            f"Bytes:    {self.gateway.camera_bytes_received}\n"
-            f"Last err: {cam_parser.last_error or 'None'}"
-        )
-        self.lbl_diagnostics.setText(diag_text)
+        # Update Overall State
+        devices = list(self.gateway.registry.devices.values())
+        if devices:
+            dev = devices[0] # Just track the first one for the main banner
+            if self.current_instrument != dev.device_id:
+                self.current_instrument = dev.device_id
+                self.display_timer.start()
+                self.btn_session.setEnabled(True)
+                
+            overall = dev.overall_state().value
+            self.current_state = overall
+            self.lbl_device_info.setText(f"<b>{dev.device_id}</b><br/>UNVERIFIED DEVICE IDENTITY")
+            
+            if overall == "DISCONNECTED":
+                self._set_disconnected_state()
+            else:
+                self.lbl_status.setText(f"● {overall}")
+                if overall == "READY":
+                    self.lbl_status.setStyleSheet("font-weight: bold; color: #3b82f6;")
+                elif overall == "ACQUIRING":
+                    self.lbl_status.setStyleSheet("font-weight: bold; color: #22c55e;")
+                elif overall == "DEGRADED":
+                    self.lbl_status.setStyleSheet("font-weight: bold; color: #ef4444;")
+                elif overall == "PARTIAL":
+                    self.lbl_status.setStyleSheet("font-weight: bold; color: #f59e0b;")
+                
+                # Check for 3/3
+                if dev.sensors and dev.camera and dev.control and dev.sensors.state.value != "DISCONNECTED" and dev.camera.state.value != "DISCONNECTED" and dev.control.state.value != "DISCONNECTED":
+                    self.lbl_device_info.setText(f"<b>{dev.device_id}</b><br/>3 / 3 CHANNELS CONNECTED")
+                    
+                # Enable capture if control is there
+                self.btn_capture.setEnabled(dev.control is not None and dev.control.state.value != "DISCONNECTED")
+                
+                # Update Diagnostics
+                def format_ch(c):
+                    if not c: return "DISCONNECTED"
+                    return f"{c.state.value} [Gen: {c.generation}]"
+                
+                diag_lines = []
+                for d in devices:
+                    diag_lines.append(f"{d.device_id}")
+                    if d.sensors:
+                        diag_lines.append(f" /sensors  ● {d.sensors.state.value}")
+                        diag_lines.append(f"   conn: {d.sensors.connection_id}")
+                        diag_lines.append(f"   pkts: {d.sensors.message_count}")
+                    else:
+                        diag_lines.append(f" /sensors  DISCONNECTED")
+                        
+                    if d.camera:
+                        diag_lines.append(f" /camera   ● {d.camera.state.value}")
+                        diag_lines.append(f"   conn: {d.camera.connection_id}")
+                        diag_lines.append(f"   msgs: {d.camera.message_count}")
+                    else:
+                        diag_lines.append(f" /camera   DISCONNECTED")
+                        
+                    if d.control:
+                        diag_lines.append(f" /control  ● {d.control.state.value}")
+                        diag_lines.append(f"   conn: {d.control.connection_id}")
+                        diag_lines.append(f"   msgs: {d.control.message_count}")
+                    else:
+                        diag_lines.append(f" /control  DISCONNECTED")
+                    diag_lines.append("")
+                
+                self.lbl_diagnostics.setText("\n".join(diag_lines))
+        else:
+            self.lbl_diagnostics.setText("Diagnostics:\n-")
         
         # Camera Rendering (bounded by UI thread)
         if self.last_displayed_camera_frame:
@@ -658,7 +703,6 @@ class InstrumentsWorkspace(QWidget):
         )
 
     def _stop_session(self, reason=None):
-        self.current_state = "CONNECTED" if self.gateway.sensor_clients else "DISCONNECTED"
         self.gateway.set_active_session("PREVIEW")
         self.btn_session.setText("START SESSION")
         self.lbl_session_status.setStyleSheet("color: #94a3b8; font-family: monospace;")
