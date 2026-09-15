@@ -97,8 +97,12 @@ class AdbLaunchRunner(QRunnable):
                 
             res_info["resolved_component"] = component
             
-            # Launch
-            cmd_start = ["adb", "-s", self.serial, "shell", "am", "start", "-n", component]
+            # Launch with intent extras for USB development mode
+            cmd_start = [
+                "adb", "-s", self.serial, "shell", "am", "start", "-n", component,
+                "--es", "VIRTUAL_LAB_TRANSPORT_MODE", "USB_ADB",
+                "--es", "VIRTUAL_LAB_BASE_URL", "ws://127.0.0.1:8765"
+            ]
             start_proc = subprocess.run(cmd_start, capture_output=True, text=True, timeout=5)
             
             res_info["exit_code"] = start_proc.returncode
