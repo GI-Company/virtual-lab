@@ -142,6 +142,11 @@ class InstrumentGateway(QObject):
             data = json.loads(raw)
             if data.get("message_type") == "CHANNEL_HELLO":
                 dev_id = data.get("device_id")
+                hello_channel = data.get("channel")
+                expected_channel = path.strip("/")
+                if hello_channel and hello_channel != expected_channel:
+                    logger.error("[%s] protocol mismatch: hello channel '%s' does not match path '%s'", conn_id, hello_channel, path)
+                    return True
                 if dev_id and dev_id != "UNKNOWN":
                     self._handle_late_binding(path, conn_id, dev_id)
                 return True

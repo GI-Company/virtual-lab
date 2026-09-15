@@ -26,6 +26,12 @@ class VirtualLabApplication(QMainWindow):
         self.evidence_store = EvidenceStore()
         self.mapping_service = StructureMappingService()
         
+        # Initialize Genesis Ledger for provenance
+        import os
+        from virtual_lab.core.ledger import GenesisLedger
+        os.makedirs(".virtuallab", exist_ok=True)
+        self.ledger = GenesisLedger(".virtuallab/genesis.db")
+        
         # Central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -74,7 +80,7 @@ class VirtualLabApplication(QMainWindow):
         self.analysis = AnalysisWorkspace(self.workspace)
         self.ai = AIWorkbench(self.workspace)
         from virtual_lab.gui.instruments.workspace import InstrumentsWorkspace
-        self.instruments = InstrumentsWorkspace(self.workspace)
+        self.instruments = InstrumentsWorkspace(self.workspace, ledger=self.ledger)
         self.evidence = EvidenceWorkspace(self.workspace)
         self.provenance = ProvenanceWorkspace(self.workspace)
         self.numerical = NumericalWorkspace(self.workspace)

@@ -40,9 +40,10 @@ class SensorStreamState:
         return len(t_recent) / dt
 
 class InstrumentsWorkspace(QWidget):
-    def __init__(self, workspace, parent=None):
+    def __init__(self, workspace, parent=None, ledger=None):
         super().__init__(parent)
         self.workspace = workspace
+        self.ledger = ledger
         self.gateway = InstrumentGateway(port=8765, parent=self)
         self.discovery = InstrumentDiscoveryService(port=8765)
         self.store = JsonlMeasurementStore()
@@ -336,22 +337,33 @@ class InstrumentsWorkspace(QWidget):
         self.current_instrument = inst_id
         self.display_timer.start()
         self.btn_session.setEnabled(True)
+        self._update_ui()
         
-        self.workspace.ledger.append(
-            event_id=f"EVT-{int(time.time()*1000)}",
-            actor=Actor(type="SYSTEM", id="virtual_lab"),
-            event_type="INSTRUMENT_CONNECTED",
-            payload={"instrument_id": inst_id, "address": address}
-        )
+        # 5. independently attempt provenance event
+        if self.ledger:
+            try:
+                self.ledger.append(
+                    event_id=f"EVT-{int(time.time()*1000)}",
+                    actor=Actor(type="SYSTEM", id="virtual_lab"),
+                    event_type="INSTRUMENT_CONNECTED",
+                    payload={"instrument_id": inst_id, "address": address}
+                )
+            except Exception as e:
+                import logging
+                logging.getLogger("virtuallab.workspace").error(f"Provenance ledger append failed: {e}")
         self._update_ui()
 
-    def _on_instrument_disconnected(self, inst_id):
-        self.workspace.ledger.append(
-            event_id=f"EVT-{int(time.time()*1000)}",
-            actor=Actor(type="SYSTEM", id="virtual_lab"),
-            event_type="INSTRUMENT_DISCONNECTED",
-            payload={"instrument_id": inst_id}
-        )
+        if self.ledger:
+            try:
+                self.ledger.append(
+                    event_id=f"EVT-{int(time.time()*1000)}",
+                    actor=Actor(type="SYSTEM", id="virtual_lab"),
+                    event_type="INSTRUMENT_DISCONNECTED",
+                    payload={"instrument_id": inst_id}
+                )
+            except Exception as e:
+                import logging
+                logging.getLogger("virtuallab.workspace").error(f"Provenance ledger append failed: {e}")
         if self.current_instrument == inst_id:
             self._set_disconnected_state()
 
@@ -505,12 +517,17 @@ class InstrumentsWorkspace(QWidget):
                     if self.optical_panel.current_calibration:
                         payload["calibration_id"] = self.optical_panel.current_calibration.calibration_id
                 
-                self.workspace.ledger.append(
-                    event_id=f"EVT-{int(time.time()*1000)}",
-                    actor=Actor(type="SYSTEM", id="virtual_lab"),
-                    event_type="SCIENTIFIC_CAMERA_FRAME_COMMITTED",
-                    payload=payload
-                )
+                if self.ledger:
+                    try:
+                        self.ledger.append(
+                            event_id=f"EVT-{int(time.time()*1000)}",
+                            actor=Actor(type="SYSTEM", id="virtual_lab"),
+                            event_type="SCIENTIFIC_CAMERA_FRAME_COMMITTED",
+                            payload=payload
+                        )
+                    except Exception as e:
+                        import logging
+                        logging.getLogger("virtuallab.workspace").error(f"Provenance ledger append failed: {e}")
 
         # Route frame to OpticalPanel if active
         if self.combo_mode.currentText() == "MICROSCOPE":
@@ -699,12 +716,16 @@ class InstrumentsWorkspace(QWidget):
         self.btn_session.setText("STOP SESSION")
         self.lbl_session_status.setStyleSheet("color: #ef4444; font-weight: bold; font-family: monospace;")
         
-        self.workspace.ledger.append(
-            event_id=f"EVT-{int(time.time()*1000)}",
-            actor=Actor(type="SYSTEM", id="virtual_lab"),
-            event_type="MEASUREMENT_SESSION_CREATED",
-            payload={"session_id": self.current_session, "instrument_id": self.current_instrument}
-        )
+        if self.ledger:
+            try:
+                self.ledger.append(
+                    event_id=f"EVT-{int(time.time()*1000)}",
+                    actor=Actor(type="SYSTEM", id="virtual_lab"),
+                    event_type="MEASUREMENT_SESSION_CREATED",
+                    payload={"session_id": self.current_session, "instrument_id": self.current_instrument}
+                )
+            except Exception as e:
+                pass
 
     def _stop_session(self, reason=None):
         self.gateway.set_active_session("PREVIEW")
@@ -713,22 +734,30 @@ class InstrumentsWorkspace(QWidget):
         
         if reason:
             self.store.abort(reason)
-            self.workspace.ledger.append(
-                event_id=f"EVT-{int(time.time()*1000)}",
-                actor=Actor(type="SYSTEM", id="virtual_lab"),
-                event_type="MEASUREMENT_SESSION_INTERRUPTED",
-                payload={"session_id": self.current_session, "reason": reason}
-            )
+            if self.ledger:
+                try:
+                    self.ledger.append(
+                        event_id=f"EVT-{int(time.time()*1000)}",
+                        actor=Actor(type="SYSTEM", id="virtual_lab"),
+                        event_type="MEASUREMENT_SESSION_INTERRUPTED",
+                        payload={"session_id": self.current_session, "reason": reason}
+                    )
+                except Exception:
+                    pass
         else:
             total_dropped = {mt: st.total_dropped for mt, st in self.streams.items()}
             rejected = self.gateway.decoder.total_rejected
             commit_result = self.store.commit(dropped_counts=total_dropped, rejected_count=rejected)
-            self.workspace.ledger.append(
-                event_id=f"EVT-{int(time.time()*1000)}",
-                actor=Actor(type="SYSTEM", id="virtual_lab"),
-                event_type="RAW_SENSOR_ARTIFACT_COMMITTED",
-                payload=commit_result
-            )
+            if self.ledger:
+                try:
+                    self.ledger.append(
+                        event_id=f"EVT-{int(time.time()*1000)}",
+                        actor=Actor(type="SYSTEM", id="virtual_lab"),
+                        event_type="RAW_SENSOR_ARTIFACT_COMMITTED",
+                        payload=commit_result
+                    )
+                except Exception:
+                    pass
             
             
         self.current_session = None

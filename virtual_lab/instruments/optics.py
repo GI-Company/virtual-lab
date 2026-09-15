@@ -72,8 +72,10 @@ class AnalysisRun:
     results: Dict[str, Any]
     created_utc: int
 
+import uuid
+
 def generate_id(prefix: str) -> str:
-    return f"{prefix}-{int(time.time()*1000)}"
+    return f"{prefix}-{uuid.uuid4()}"
 
 def hash_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
