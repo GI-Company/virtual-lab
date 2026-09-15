@@ -101,3 +101,30 @@ def test_device_overall_state():
     registry.remove_connection("CONN-C")
     registry.remove_connection("CONN-CAM")
     assert dev.overall_state().value == "DISCONNECTED"
+
+def test_sensors_only_partial_connection():
+    registry = ConnectionRegistry()
+    
+    # Simulate a local adb reverse connection
+    s = MockSocket()
+    conn_s = ChannelConnectionState("sensors", "CONN-S1", 1, s, "127.0.0.1", 1000)
+    registry.add_connection(conn_s)
+    
+    # Bind to persistent device_id from measurement
+    registry.bind_connection("CONN-S1", "ANDROID-test123")
+    
+    # Assert registry state
+    dev = registry.devices["ANDROID-test123"]
+    
+    assert dev.sensors is not None
+    assert dev.sensors.state == SensorChannelState.CONNECTED
+    
+    assert dev.camera is None
+    assert dev.control is None
+    
+    # Overall state must be PARTIAL (or ACQUIRING if streaming), NOT DISCONNECTED
+    assert dev.overall_state().value == "PARTIAL"
+    
+    # If it starts streaming, it should be ACQUIRING
+    dev.sensors.state = SensorChannelState.STREAMING
+    assert dev.overall_state().value == "ACQUIRING"

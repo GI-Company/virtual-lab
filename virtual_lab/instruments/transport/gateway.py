@@ -162,7 +162,10 @@ class InstrumentGateway(QObject):
             
         try:
             measurement = self.decoder.decode(raw, self.active_session_id)
-            self._handle_late_binding("/sensors", conn_id, measurement.instrument_id)
+            if not measurement.instrument_id:
+                logger.warning("[SENSORS] DEVICE_ID MISSING - CHANNEL UNBOUND")
+            else:
+                self._handle_late_binding("/sensors", conn_id, measurement.instrument_id)
         except Exception as exc:
             if conn:
                 conn.last_error = str(exc)

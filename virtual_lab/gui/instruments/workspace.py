@@ -333,6 +333,8 @@ class InstrumentsWorkspace(QWidget):
 
     def _on_instrument_connected(self, inst_id, address):
         self.current_instrument = inst_id
+        self.display_timer.start()
+        self.btn_session.setEnabled(True)
         
         self.workspace.ledger.append(
             event_id=f"EVT-{int(time.time()*1000)}",
@@ -340,6 +342,7 @@ class InstrumentsWorkspace(QWidget):
             event_type="INSTRUMENT_CONNECTED",
             payload={"instrument_id": inst_id, "address": address}
         )
+        self._update_ui()
 
     def _on_instrument_disconnected(self, inst_id):
         self.workspace.ledger.append(

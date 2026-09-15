@@ -80,23 +80,20 @@ class DeviceConnectionState:
         if self.camera and self.camera.state == CameraChannelState.STREAMING:
             acquiring = True
             
-        if has_all:
-            # Check for DEGRADED (if something failed)
-            if (self.sensors and self.sensors.state == SensorChannelState.FAILED) or \
-               (self.camera and self.camera.state == CameraChannelState.FAILED) or \
-               (self.control and self.control.state == ControlChannelState.FAILED):
-                return InstrumentState.DEGRADED
-                
-            if acquiring:
-                return InstrumentState.ACQUIRING
-            return InstrumentState.READY
-            
-        # Not all connected, but some are
+        # Check for DEGRADED first
         if (self.sensors and self.sensors.state == SensorChannelState.FAILED) or \
            (self.camera and self.camera.state == CameraChannelState.FAILED) or \
            (self.control and self.control.state == ControlChannelState.FAILED):
             return InstrumentState.DEGRADED
             
+        # Then check ACQUIRING
+        if acquiring:
+            return InstrumentState.ACQUIRING
+            
+        if has_all:
+            return InstrumentState.READY
+            
+        # Not all connected, but some are (and not acquiring, and not degraded)
         return InstrumentState.PARTIAL
 
 class ConnectionRegistry:
