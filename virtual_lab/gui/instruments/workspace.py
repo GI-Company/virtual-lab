@@ -307,6 +307,7 @@ class InstrumentsWorkspace(QWidget):
         self.btn_session.setText("START SESSION")
         self.display_timer.stop()
         self.lbl_values.clear()
+        self.lbl_diagnostics.setText("Diagnostics:\n-")
         
         self.streams.clear()
         self.combo_sensor.clear()

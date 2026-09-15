@@ -128,3 +128,35 @@ def test_sensors_only_partial_connection():
     # If it starts streaming, it should be ACQUIRING
     dev.sensors.state = SensorChannelState.STREAMING
     assert dev.overall_state().value == "ACQUIRING"
+
+def test_live_recording_channel_attribution_bug():
+    registry = ConnectionRegistry()
+    
+    # 1. /sensors connection
+    conn_s = ChannelConnectionState("sensors", "CONN-S1", 1, MockSocket(), "192.168.1.5", 1000)
+    registry.add_connection(conn_s)
+    registry.bind_connection("CONN-S1", "ANDROID-c0f8e767")
+    conn_s.state = SensorChannelState.STREAMING
+    
+    # 2. /camera connection
+    conn_c = ChannelConnectionState("camera", "CONN-C1", 1, MockSocket(), "192.168.1.5", 1000)
+    registry.add_connection(conn_c)
+    registry.bind_connection("CONN-C1", "ANDROID-c0f8e767")
+    # Camera has 0 valid frames, remains CONNECTED (which means IDLE)
+    
+    # 3. /control absent
+    
+    dev = registry.devices["ANDROID-c0f8e767"]
+    
+    assert dev.sensors.state == SensorChannelState.STREAMING
+    assert dev.camera.state == CameraChannelState.CONNECTED
+    assert dev.control is None
+    
+    assert dev.overall_state().value == "ACQUIRING"
+    
+    # Then disconnect /sensors
+    registry.remove_connection("CONN-S1")
+    
+    assert dev.sensors.state == SensorChannelState.DISCONNECTED
+    assert dev.camera.state == CameraChannelState.CONNECTED
+    assert dev.overall_state().value == "PARTIAL"

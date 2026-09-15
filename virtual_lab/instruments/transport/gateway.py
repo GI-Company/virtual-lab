@@ -101,7 +101,7 @@ class InstrumentGateway(QObject):
         )
         self.registry.add_connection(conn_state)
         
-        logger.info("[%s][%s] connected from %s", c_type.upper(), conn_id, remote_ip)
+        logger.info("[%s] accepted path=%s channel=%s", conn_id, path, c_type.upper())
         self.channelConnected.emit(path, conn_id)
         
         if path == "/sensors":
@@ -142,7 +142,7 @@ class InstrumentGateway(QObject):
             data = json.loads(raw)
             if data.get("message_type") == "CHANNEL_HELLO":
                 dev_id = data.get("device_id")
-                if dev_id:
+                if dev_id and dev_id != "UNKNOWN":
                     self._handle_late_binding(path, conn_id, dev_id)
                 return True
         except Exception:
@@ -154,18 +154,24 @@ class InstrumentGateway(QObject):
         if conn:
             conn.last_activity_utc = int(time.time()*1000)
             conn.message_count += 1
-            if conn.state != SensorChannelState.STREAMING:
-                conn.state = SensorChannelState.STREAMING
+            if conn.channel_type != "sensors":
+                logger.error("[%s][%s] protocol mismatch: text message on non-sensors channel", conn_id, conn.channel_type.upper())
+                return
             
         if self._try_parse_hello("/sensors", conn_id, raw):
             return
             
         try:
             measurement = self.decoder.decode(raw, self.active_session_id)
-            if not measurement.instrument_id:
-                logger.warning("[SENSORS] DEVICE_ID MISSING - CHANNEL UNBOUND")
+            if not measurement.instrument_id or measurement.instrument_id == "UNKNOWN":
+                logger.warning("[%s][SENSORS] DEVICE_ID MISSING - CHANNEL UNBOUND", conn_id)
             else:
+                logger.debug("[%s][SENSORS] Measurement decoded", conn_id)
                 self._handle_late_binding("/sensors", conn_id, measurement.instrument_id)
+                if conn and conn.state != SensorChannelState.STREAMING:
+                    conn.state = SensorChannelState.STREAMING
+                    dev_id = conn.bound_device_id or "UNBOUND"
+                    logger.info("[%s][SENSORS] STREAMING", dev_id)
         except Exception as exc:
             if conn:
                 conn.last_error = str(exc)
@@ -192,15 +198,21 @@ class InstrumentGateway(QObject):
             conn.last_activity_utc = int(time.time()*1000)
             conn.message_count += 1
             conn.byte_count += len(raw_bytes)
-            if conn.state != CameraChannelState.STREAMING:
-                conn.state = CameraChannelState.STREAMING
+            if conn.channel_type != "camera":
+                logger.error("[%s][%s] protocol mismatch: binary frame on non-camera channel", conn_id, conn.channel_type.upper())
+                return
                 
         self.camera_binary_messages_received += 1
         self.camera_bytes_received += len(raw_bytes)
         
         try:
             frame = self.camera_decoder.decode(raw_bytes)
+            logger.debug("[%s][CAMERA] CameraFrame decoded seq=%s", conn_id, frame.frame_sequence)
             self._handle_late_binding("/camera", conn_id, frame.device_id)
+            if conn and conn.state != CameraChannelState.STREAMING:
+                conn.state = CameraChannelState.STREAMING
+                dev_id = conn.bound_device_id or "UNBOUND"
+                logger.info("[%s][CAMERA] STREAMING", dev_id)
         except Exception as exc:
             if conn:
                 conn.last_error = str(exc)
@@ -215,6 +227,9 @@ class InstrumentGateway(QObject):
         if conn:
             conn.last_activity_utc = int(time.time()*1000)
             conn.message_count += 1
+            if conn.channel_type != "control":
+                logger.error("[%s][%s] protocol mismatch: text message on non-control channel", conn_id, conn.channel_type.upper())
+                return
             
         if self._try_parse_hello("/control", conn_id, raw):
             return
