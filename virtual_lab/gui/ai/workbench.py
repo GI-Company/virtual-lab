@@ -140,9 +140,22 @@ class AIWorkbench(QWidget):
         self.txt_prompt.setEnabled(False)
         
         context = ScientificContext(
+            context_id="CTX-001",
             disease_model_id="rho_p23h",
-            compound_id="YC-001",
-            parameter_values={"ec50_um": 0.98}
+            disease_model_hash="sha256:dummy",
+            experiment_id="EXP-001",
+            experiment_hash="sha256:dummy",
+            state_schema=["time", "concentration"],
+            state_constraints={},
+            parameter_values={"ec50_um": 0.98},
+            parameter_epistemics={},
+            parameter_uncertainties={},
+            exposure_model="default",
+            compound_identity="YC-001",
+            evidence_snapshot_hash="sha256:dummy",
+            mechanism_graph_hash="sha256:dummy",
+            simulation_backend="mock",
+            numerical_validation="mock"
         )
         
         worker = AgentWorker(prompt, context, self.chat_session)

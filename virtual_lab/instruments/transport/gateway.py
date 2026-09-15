@@ -23,7 +23,7 @@ class InstrumentGateway(QObject):
     # Public fine-grained signals
     channelConnected = Signal(str, str) # path, connection_id
     channelBound = Signal(str, str, str) # path, connection_id, device_id
-    channelDisconnected = Signal(str, str) # path, connection_id
+    channelDisconnected = Signal(str, str, str, int) # device_id, channel_type, connection_id, generation
     channelError = Signal(str, str, str) # path, connection_id, error
     
     # Backward compatible projection signals
@@ -260,9 +260,12 @@ class InstrumentGateway(QObject):
         
         conn = self.registry.get_connection(conn_id)
         dev_id = conn.bound_device_id if conn else "UNBOUND"
+        gen = conn.generation if conn else 0
         logger.info("[%s][%s][%s] disconnected", c_type, dev_id, conn_id)
-        
-        self.channelDisconnected.emit(path, conn_id)
+        try:
+            self.channelDisconnected.emit(dev_id, c_type, conn_id, gen)
+        except RuntimeError:
+            pass # Signal source deleted during application teardown
         self.registry.remove_connection(conn_id)
         
         if path == "/sensors" and socket in self.sensor_clients:

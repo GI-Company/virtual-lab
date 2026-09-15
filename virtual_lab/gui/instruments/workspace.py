@@ -7,7 +7,117 @@ import time
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+import subprocess
+import shutil
+from PySide6.QtCore import Qt, QTimer, QObject, Signal, QRunnable, QThreadPool
 
+class AdbSignals(QObject):
+    devices_discovered = Signal(list)
+    reverse_verified = Signal(str, bool, str)
+    launch_completed = Signal(dict)
+
+class AdbDiscoveryRunner(QRunnable):
+    def __init__(self):
+        super().__init__()
+        self.signals = AdbSignals()
+        
+    def run(self):
+        try:
+            result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=5)
+            devices = []
+            for line in result.stdout.splitlines()[1:]:
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        devices.append((parts[0], parts[1]))
+            self.signals.devices_discovered.emit(devices)
+        except Exception as e:
+            self.signals.devices_discovered.emit([])
+
+class AdbReverseRunner(QRunnable):
+    def __init__(self, serial):
+        super().__init__()
+        self.serial = serial
+        self.signals = AdbSignals()
+        
+    def run(self):
+        try:
+            # Execute reverse
+            subprocess.run(["adb", "-s", self.serial, "reverse", "tcp:8765", "tcp:8765"], capture_output=True, text=True, timeout=5)
+            # Verify
+            list_res = subprocess.run(["adb", "-s", self.serial, "reverse", "--list"], capture_output=True, text=True, timeout=5)
+            
+            verified = False
+            for line in list_res.stdout.splitlines():
+                if "tcp:8765 tcp:8765" in line:
+                    verified = True
+                    break
+                    
+            self.signals.reverse_verified.emit(self.serial, verified, list_res.stdout)
+        except Exception as e:
+            self.signals.reverse_verified.emit(self.serial, False, str(e))
+
+class AdbLaunchRunner(QRunnable):
+    def __init__(self, serial):
+        super().__init__()
+        self.serial = serial
+        self.signals = AdbSignals()
+        
+    def run(self):
+        pkg = "com.aistudio.sensornode.vlsnxz"
+        res_info = {
+            "serial": self.serial,
+            "package_name": pkg,
+            "resolved_component": None,
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": "",
+            "status": "LAUNCH_FAILED"
+        }
+        
+        try:
+            # Check if installed / get launcher activity
+            cmd_resolve = ["adb", "-s", self.serial, "shell", "cmd", "package", "resolve-activity", "--brief", pkg]
+            resolve_proc = subprocess.run(cmd_resolve, capture_output=True, text=True, timeout=5)
+            
+            output_lines = resolve_proc.stdout.strip().splitlines()
+            if not output_lines or "No activity found" in resolve_proc.stdout:
+                res_info["status"] = "APP_NOT_INSTALLED"
+                res_info["stdout"] = resolve_proc.stdout
+                res_info["stderr"] = resolve_proc.stderr
+                self.signals.launch_completed.emit(res_info)
+                return
+                
+            component = output_lines[-1].strip()
+            if not component or "/" not in component:
+                res_info["status"] = "LAUNCH_ACTIVITY_NOT_FOUND"
+                res_info["stdout"] = resolve_proc.stdout
+                self.signals.launch_completed.emit(res_info)
+                return
+                
+            res_info["resolved_component"] = component
+            
+            # Launch
+            cmd_start = ["adb", "-s", self.serial, "shell", "am", "start", "-n", component]
+            start_proc = subprocess.run(cmd_start, capture_output=True, text=True, timeout=5)
+            
+            res_info["exit_code"] = start_proc.returncode
+            res_info["stdout"] = start_proc.stdout
+            res_info["stderr"] = start_proc.stderr
+            
+            if start_proc.returncode == 0 and "Error" not in start_proc.stderr:
+                res_info["status"] = "LAUNCHED"
+            else:
+                res_info["status"] = "LAUNCH_FAILED"
+                
+        except subprocess.TimeoutExpired:
+            res_info["status"] = "LAUNCH_FAILED"
+            res_info["stderr"] = "Timeout"
+        except Exception as e:
+            res_info["status"] = "LAUNCH_FAILED"
+            res_info["stderr"] = str(e)
+            
+        self.signals.launch_completed.emit(res_info)
 from virtual_lab.instruments.transport.gateway import InstrumentGateway
 from virtual_lab.instruments.transport.discovery import InstrumentDiscoveryService, DiscoveryStatus
 from virtual_lab.instruments.storage import JsonlMeasurementStore
@@ -64,6 +174,7 @@ class InstrumentsWorkspace(QWidget):
         self.pending_capture_request_id: Optional[str] = None
         
         self.device_states = {} # local track if needed, but registry is primary
+        self.thread_pool = QThreadPool()
         
         self._init_ui()
         self._connect_signals()
@@ -137,6 +248,38 @@ class InstrumentsWorkspace(QWidget):
         self.btn_gateway = QPushButton("Enable Instrument Gateway")
         self.btn_gateway.clicked.connect(self._toggle_gateway)
         devices_layout.addWidget(self.btn_gateway)
+        
+        self.btn_adb_discover = QPushButton("Discover USB Devices")
+        self.btn_adb_discover.clicked.connect(self._discover_adb_devices)
+        if not shutil.which("adb"):
+            self.btn_adb_discover.setEnabled(False)
+            self.btn_adb_discover.setText("Discover USB Devices (ADB MISSING)")
+            self.btn_adb_discover.setToolTip("Install Android Platform Tools or add adb to PATH.")
+        devices_layout.addWidget(self.btn_adb_discover)
+        
+        adb_row = QHBoxLayout()
+        self.combo_adb_devices = QComboBox()
+        self.combo_adb_devices.addItem("No devices")
+        self.btn_adb_connect = QPushButton("DISCOVERED")
+        self.btn_adb_connect.setEnabled(False)
+        self.btn_adb_connect.clicked.connect(self._on_adb_connect_clicked)
+        adb_row.addWidget(self.combo_adb_devices)
+        adb_row.addWidget(self.btn_adb_connect)
+        devices_layout.addLayout(adb_row)
+        
+        self.btn_adb_disconnect = QPushButton("Disconnect USB Transport")
+        self.btn_adb_disconnect.clicked.connect(self._on_adb_disconnect_clicked)
+        self.btn_adb_disconnect.setEnabled(False)
+        devices_layout.addWidget(self.btn_adb_disconnect)
+        
+        self.lbl_usb_dev_mode = QLabel("USB DEVELOPMENT MODE\nSensorNode endpoint:\nws://127.0.0.1:8765/sensors")
+        self.lbl_usb_dev_mode.setStyleSheet("font-family: monospace; font-weight: bold; color: #a855f7;")
+        self.lbl_usb_dev_mode.hide()
+        devices_layout.addWidget(self.lbl_usb_dev_mode)
+        
+        self.lbl_adb_diagnostics = QLabel("ADB:\n-")
+        self.lbl_adb_diagnostics.setStyleSheet("font-family: monospace; color: #94a3b8; font-size: 10px;")
+        devices_layout.addWidget(self.lbl_adb_diagnostics)
         
         self.btn_session = QPushButton("START SESSION")
         self.btn_session.setObjectName("primary")
@@ -222,6 +365,33 @@ class InstrumentsWorkspace(QWidget):
         self.gateway.instrumentDisconnected.connect(self._on_instrument_disconnected)
         self.gateway.measurementReceived.connect(self._on_measurement)
         self.gateway.binaryMessageReceived.connect(self._on_binary_message)
+        self.gateway.channelDisconnected.connect(self._on_channel_disconnected)
+
+    def _on_channel_disconnected(self, device_id, channel_type, conn_id, generation):
+        dev = self.gateway.registry.devices.get(device_id)
+        if not dev:
+            return
+            
+        # Check generation safety
+        active_conn = None
+        if channel_type == "SENSORS":
+            active_conn = dev.sensors
+        elif channel_type == "CAMERA":
+            active_conn = dev.camera
+        elif channel_type == "CONTROL":
+            active_conn = dev.control
+            
+        if active_conn and (active_conn.connection_id != conn_id or active_conn.generation != generation):
+            import logging
+            logging.getLogger("virtuallab.workspace").warning(f"Ignored stale disconnect for {channel_type} gen {generation}")
+            return
+            
+        # Only interrupt if the recording's required channel is lost
+        if channel_type == "SENSORS" and self.current_state in ("RECORDING", "FINALIZING_INTERRUPTED"):
+            if self.current_instrument == device_id:
+                self._stop_session(reason="TRANSPORT_LOST")
+                
+        self._update_ui()
 
     def _on_mode_changed(self, text):
         if text == "CAMERA":
@@ -298,7 +468,118 @@ class InstrumentsWorkspace(QWidget):
         else:
             self.lbl_gateway_info.setStyleSheet("font-family: monospace; color: #94a3b8;")
 
+    def _discover_adb_devices(self):
+        self.lbl_adb_diagnostics.setText("ADB:\nSearching...")
+        runner = AdbDiscoveryRunner()
+        runner.signals.devices_discovered.connect(self._on_adb_devices_discovered)
+        self.thread_pool.start(runner)
+
+    def _on_adb_devices_discovered(self, devices):
+        self.combo_adb_devices.clear()
+        if not devices:
+            self.lbl_adb_diagnostics.setText("ADB:\nNo devices detected")
+            self.combo_adb_devices.addItem("No devices")
+            self.btn_adb_connect.setEnabled(False)
+            self.btn_adb_connect.setText("DISCOVERED")
+            return
+            
+        has_eligible = False
+        for serial, state in devices:
+            if state == "device":
+                # Get a friendly name (mocked for now, in real life we'd use getprop ro.product.model)
+                self.combo_adb_devices.addItem(f"{serial} — AVAILABLE", userData=serial)
+                has_eligible = True
+            elif state == "unauthorized":
+                self.combo_adb_devices.addItem(f"{serial} — UNAUTHORIZED", userData=None)
+            else:
+                self.combo_adb_devices.addItem(f"{serial} — {state.upper()}", userData=None)
+                
+        if has_eligible:
+            self.btn_adb_connect.setEnabled(True)
+            self.btn_adb_connect.setText("Connect & Launch")
+            self.lbl_adb_diagnostics.setText("ADB:\nDevices found. Select and connect.")
+        else:
+            self.btn_adb_connect.setEnabled(False)
+            self.btn_adb_connect.setText("NO ELIGIBLE DEVICE")
+            self.lbl_adb_diagnostics.setText("ADB:\nNo eligible devices detected.")
+
+    def _on_adb_connect_clicked(self):
+        idx = self.combo_adb_devices.currentIndex()
+        if idx < 0: return
+        
+        serial = self.combo_adb_devices.itemData(idx)
+        if not serial: return
+        
+        self.btn_adb_connect.setEnabled(False)
+        self.btn_adb_connect.setText("ESTABLISHING_TUNNEL")
+        self.btn_adb_disconnect.setEnabled(False)
+        self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nMapping...")
+        self._reverse_adb_device(serial)
+
+    def _reverse_adb_device(self, serial):
+        runner = AdbReverseRunner(serial)
+        runner.signals.reverse_verified.connect(self._on_adb_reverse_verified)
+        self.thread_pool.start(runner)
+
+    def _on_adb_reverse_verified(self, serial, verified, stdout):
+        if verified:
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nMapping: ACTIVE\nLaunching app...")
+            self.btn_adb_connect.setText("TUNNEL_ACTIVE -> LAUNCHING_APP")
+            
+            # Now launch the app
+            runner = AdbLaunchRunner(serial)
+            runner.signals.launch_completed.connect(self._on_adb_launch_completed)
+            self.thread_pool.start(runner)
+        else:
+            self.lbl_adb_diagnostics.setText(f"ADB:\ndevice detected\n{serial}\nmapping status: FAILED")
+            self.btn_adb_connect.setEnabled(True)
+            self.btn_adb_connect.setText("REVERSE FAILED")
+
+    def _on_adb_launch_completed(self, res_info):
+        serial = res_info["serial"]
+        status = res_info["status"]
+        
+        if status == "LAUNCHED":
+            self.btn_adb_connect.setText("WAITING_FOR_PROTOCOL")
+            self.btn_adb_disconnect.setEnabled(True)
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nSensorNode launch: SUCCESS")
+            self.lbl_usb_dev_mode.setText("USB DEVELOPMENT MODE\nADB tunnel: ACTIVE\nRequired SensorNode endpoint:\nws://127.0.0.1:8765/sensors")
+            self.lbl_usb_dev_mode.show()
+        elif status == "APP_NOT_INSTALLED":
+            self.btn_adb_connect.setText("APP_NOT_INSTALLED")
+            self.btn_adb_connect.setEnabled(True)
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nSensorNode not installed on selected device")
+        elif status == "LAUNCH_ACTIVITY_NOT_FOUND":
+            self.btn_adb_connect.setText("LAUNCH_ACTIVITY_NOT_FOUND")
+            self.btn_adb_connect.setEnabled(True)
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nSensorNode launcher activity not found")
+        else:
+            self.btn_adb_connect.setText("LAUNCH_FAILED")
+            self.btn_adb_connect.setEnabled(True)
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nLaunch Failed: {res_info['stderr']}")
+
+    def _on_adb_disconnect_clicked(self):
+        idx = self.combo_adb_devices.currentIndex()
+        if idx < 0: return
+        serial = self.combo_adb_devices.itemData(idx)
+        if not serial: return
+        
+        self.btn_adb_disconnect.setEnabled(False)
+        self.lbl_usb_dev_mode.hide()
+        
+        # Remove reverse mapping
+        try:
+            subprocess.run(["adb", "-s", serial, "reverse", "--remove", "tcp:8765"], capture_output=True, timeout=3)
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nMapping removed.")
+            self.btn_adb_connect.setText("Connect & Launch")
+            self.btn_adb_connect.setEnabled(True)
+        except Exception as e:
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nFailed to remove mapping: {e}")
+
     def _set_disconnected_state(self):
+        if self.current_session:
+            self._stop_session(reason="TRANSPORT_LOST")
+            
         self.current_state = "DISCONNECTED"
         self.current_instrument = None
         self.lbl_status.setText("● DISCONNECTED")
@@ -329,14 +610,10 @@ class InstrumentsWorkspace(QWidget):
         self.curve_v3.setData([], [])
         self.curve_mag.setData([], [])
         self.lbl_session_status.setText("Preview Mode")
-        
-        if self.current_session:
-            self._stop_session(reason="Instrument disconnected mid-session")
 
     def _on_instrument_connected(self, inst_id, address):
         self.current_instrument = inst_id
         self.display_timer.start()
-        self.btn_session.setEnabled(True)
         self._update_ui()
         
         # 5. independently attempt provenance event
@@ -353,6 +630,7 @@ class InstrumentsWorkspace(QWidget):
                 logging.getLogger("virtuallab.workspace").error(f"Provenance ledger append failed: {e}")
         self._update_ui()
 
+    def _on_instrument_disconnected(self, inst_id):
         if self.ledger:
             try:
                 self.ledger.append(
@@ -542,8 +820,18 @@ class InstrumentsWorkspace(QWidget):
             if self.current_instrument != dev.device_id:
                 self.current_instrument = dev.device_id
                 self.display_timer.start()
-                self.btn_session.setEnabled(True)
                 
+            can_start = (
+                self.current_instrument is not None
+                and self.current_state != "RECORDING"
+                and dev.sensors
+                and dev.sensors.state.value in ("CONNECTED", "STREAMING")
+            )
+            self.btn_session.setEnabled(can_start or self.current_state == "RECORDING")
+            
+            if can_start and self.btn_adb_connect.text() == "WAITING_FOR_PROTOCOL":
+                self.btn_adb_connect.setText("CONNECTED")
+            
             overall = dev.overall_state().value
             self.current_state = overall
             self.lbl_device_info.setText(f"<b>{dev.device_id}</b><br/>UNVERIFIED DEVICE IDENTITY")
@@ -696,7 +984,15 @@ class InstrumentsWorkspace(QWidget):
             self.lbl_session_status.setText("Preview Mode")
 
     def _toggle_session(self):
-        if self.current_state == "CONNECTED":
+        dev = self.gateway.registry.devices.get(self.current_instrument)
+        can_start_session = (
+            dev is not None
+            and self.current_state != "RECORDING"
+            and dev.sensors
+            and dev.sensors.state.value in ("CONNECTED", "STREAMING")
+        )
+        
+        if can_start_session:
             self._start_session()
         elif self.current_state == "RECORDING":
             self._stop_session()
@@ -728,22 +1024,31 @@ class InstrumentsWorkspace(QWidget):
                 pass
 
     def _stop_session(self, reason=None):
+        if self.current_state not in ("RECORDING", "FINALIZING_INTERRUPTED"):
+            return
+            
+        if self.current_state == "FINALIZING_INTERRUPTED":
+            return
+            
+        self.current_state = "FINALIZING_INTERRUPTED"
+        
         self.gateway.set_active_session("PREVIEW")
         self.btn_session.setText("START SESSION")
         self.lbl_session_status.setStyleSheet("color: #94a3b8; font-family: monospace;")
         
         if reason:
-            self.store.abort(reason)
-            if self.ledger:
+            abort_info = self.store.abort(reason)
+            if self.ledger and abort_info:
                 try:
                     self.ledger.append(
                         event_id=f"EVT-{int(time.time()*1000)}",
                         actor=Actor(type="SYSTEM", id="virtual_lab"),
                         event_type="MEASUREMENT_SESSION_INTERRUPTED",
-                        payload={"session_id": self.current_session, "reason": reason}
+                        payload=abort_info
                     )
                 except Exception:
                     pass
+            self.current_state = "INTERRUPTED"
         else:
             total_dropped = {mt: st.total_dropped for mt, st in self.streams.items()}
             rejected = self.gateway.decoder.total_rejected
@@ -758,9 +1063,10 @@ class InstrumentsWorkspace(QWidget):
                     )
                 except Exception:
                     pass
-            
+            self.current_state = "PREVIEW"
             
         self.current_session = None
+        self._update_ui()
 
     def _trigger_scientific_capture(self):
         from virtual_lab.instruments.optics import generate_id

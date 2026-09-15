@@ -99,11 +99,40 @@ class JsonlMeasurementStore:
             "rejected_packet_counts": rejected_count
         }
 
-    def abort(self, reason: str):
-        if self.file_handle:
-            self.file_handle.close()
-            self.file_handle = None
+    def abort(self, reason: str) -> dict:
+        if not self.file_handle:
+            return {}
+            
+        self.file_handle.close()
+        self.file_handle = None
+        
+        sha256_hash = hashlib.sha256()
+        with open(self.jsonl_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+                
+        artifact_hash = sha256_hash.hexdigest()
+        
+        with open(os.path.join(self.session_dir, "measurements.sha256"), "w") as f:
+            f.write(artifact_hash)
+            
+        duration_s = 0.0
+        if self.first_timestamp and self.last_timestamp and self.sample_count_total > 1:
+            duration_s = (self.last_timestamp - self.first_timestamp) / 1e9
             
         if self.session_dir:
             with open(os.path.join(self.session_dir, "ABORTED.txt"), "w") as f:
                 f.write(f"Session aborted: {reason}\n")
+                
+        return {
+            "status": "INTERRUPTED",
+            "reason": reason,
+            "session_id": self.session_id,
+            "instrument_id": self.instrument_id,
+            "sample_count_total": self.sample_count_total,
+            "sample_counts": dict(self.sample_counts),
+            "duration_s": duration_s,
+            "artifact_format": "jsonl/v1",
+            "artifact_hash": artifact_hash,
+            "last_sample_device_timestamp_ns": self.last_timestamp
+        }
