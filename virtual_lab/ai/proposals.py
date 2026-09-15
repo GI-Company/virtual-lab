@@ -24,3 +24,19 @@ class ExperimentProposal(BaseModel):
     parameter_changes: ParameterChanges = Field(default_factory=ParameterChanges, description="Proposed mechanistic overrides")
     outputs: List[str] = Field(description="List of states to track, e.g., ['R_s', 'S', 'V']")
     rationale: str = Field(description="Scientific rationale for this proposed experiment")
+
+class GenerationEnvelope(BaseModel):
+    proposal_id: str
+    provider: str
+    provider_model: str
+    created_at: str
+    prompt_hash: str
+    scientific_context_hash: str
+    grounding_metadata: dict = Field(default_factory=dict)
+    schema_version: str = "1.0"
+    
+class CandidateEvidence(BaseModel):
+    source_uri: str
+    title: str
+    snippet: str
+    retrieval_timestamp: str

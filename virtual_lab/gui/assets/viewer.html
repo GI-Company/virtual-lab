@@ -1,0 +1,40 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="molstar.css">
+<style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0d141d}#status{position:absolute;bottom:8px;left:8px;z-index:100;color:#e2e8f0;background:#16202de8;font:12px sans-serif;padding:7px;max-width:90%}</style>
+<script src="molstar.js"></script><script src="residue_bridge.js"></script><script src="qrc:///qtwebchannel/qwebchannel.js"></script></head>
+<body><div id="app"></div><div id="status">Loading local structure viewer…</div><script>
+let viewer, backend, pendingFocus=null, structureLoaded=false;
+function status(text){document.getElementById('status').textContent=text;}
+const ready=(async()=>{
+    viewer=await molstar.Viewer.create('app',{layoutIsExpanded:false,layoutShowControls:false,layoutShowRemoteState:false,layoutShowSequence:true,layoutShowLog:false,layoutShowLeftPanel:false,viewportShowExpand:false});
+    viewer.plugin.canvas3d.setProps({renderer:{backgroundColor:0x0d141d}});
+    viewer.plugin.behaviors.interaction.click.subscribe(e=>{
+        const ref=residueFromLoci(e.current && e.current.loci);
+        if(ref && backend) backend.on_residue_clicked(ref.structure_id,ref.model_id,ref.chain_id,ref.auth_residue_number,ref.insertion_code);
+        if(ref) status(`${ref.structure_id} • model ${ref.model_id} • chain ${ref.chain_id} • residue ${ref.auth_residue_number}${ref.insertion_code}`);
+    });
+})();
+new QWebChannel(qt.webChannelTransport, channel=>{backend=channel.objects.backend;});
+async function loadStructure(url){
+    try {await ready; await viewer.loadStructureFromUrl(url,'pdb');structureLoaded=true;
+        status('Bovine wild-type rhodopsin • select a residue • no YC-001 docking pose');
+        if(pendingFocus) focusResidue(pendingFocus);
+    }catch(e){status('Structure load failed: '+e.message);}
+}
+async function loadMolecule(sdf){
+    try {await ready;await viewer.plugin.clear();await viewer.loadStructureFromData(sdf,'sdf');status('Generated conformer • UFF geometry • no binding or activity prediction');}
+    catch(e){status('Molecule load failed: '+e.message);}
+}
+function focusResidue(ref){
+    pendingFocus=ref;if(!structureLoaded)return false;
+    const hierarchy=viewer.plugin.managers.structure.hierarchy.current.structures;
+    for(const entry of hierarchy){
+        const structure=entry.cell.obj && entry.cell.obj.data;if(!structure)continue;
+        const loci=residueLoci(structure,ref);if(!loci.elements.length)continue;
+        viewer.plugin.managers.interactivity.lociSelect.deselectAll();
+        viewer.plugin.managers.interactivity.lociSelect.select({loci});
+        viewer.plugin.managers.camera.focusLoci(loci);
+        status('Focused bovine structural reference • human sequence mapping is unresolved');return true;
+    }
+    status('Requested residue is absent from the loaded structure');return false;
+}
+</script></body></html>

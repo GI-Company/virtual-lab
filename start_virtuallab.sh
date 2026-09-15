@@ -17,4 +17,4 @@ echo "Starting VirtualLab Desktop (RHO P23H Beta)..."
 source .venv/bin/activate
 
 # Execute the main window using the python module path
-python3 -m virtual_lab.gui.main_window
+python3 -m virtual_lab.gui.shell.main_window

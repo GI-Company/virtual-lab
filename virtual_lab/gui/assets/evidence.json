@@ -1,0 +1,60 @@
+{
+  "evidence_version": 1,
+  "claims": [
+    {
+      "id": "variant_pathogenic",
+      "claim": "RHO c.68C>A (p.Pro23His) is classified as pathogenic for retinitis pigmentosa.",
+      "source": "https://www.ncbi.nlm.nih.gov/clinvar/RCV000013887/",
+      "source_type": "official_database"
+    },
+    {
+      "id": "target_identity",
+      "claim": "Human rhodopsin is UniProt P08100 and is encoded by RHO.",
+      "source": "https://www.uniprot.org/uniprotkb/P08100/entry",
+      "source_type": "official_database"
+    },
+    {
+      "id": "mechanism_misfolding",
+      "claim": "P23H opsin shows structural instability, ER retention, and ER-associated degradation in the cited experimental literature.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5958115/",
+      "source_type": "primary_research"
+    },
+    {
+      "id": "yc001_cell_activity",
+      "claim": "YC-001 improved P23H opsin trafficking in cell assays and was characterized as a non-retinoid pharmacological chaperone.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5958115/",
+      "source_type": "primary_research"
+    },
+    {
+      "id": "yc001_tradeoff",
+      "claim": "YC-001 also showed inverse-agonist and noncompetitive antagonist behavior toward rod opsin signaling, creating a functional tradeoff that must be measured.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5958115/",
+      "source_type": "primary_research"
+    },
+    {
+      "id": "p23h_preclinical_followup",
+      "claim": "Later P23H mouse and retinal-explant work remained preclinical and reported micromolar YC-001 effects on rhodopsin localization.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9220944/",
+      "source_type": "primary_research"
+    },
+    {
+      "id": "yc001_human_p23h_cellular",
+      "claim": "YC-001 improved cell-surface trafficking of human RHO P23H in a heterologous NIH3T3 expression system, with a weaker effect than reported for mouse P23H.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9220944/",
+      "source_type": "primary_research"
+    },
+    {
+      "id": "yc001_p23h_mouse_in_vivo",
+      "claim": "Intravitreal YC-001 microparticles temporarily improved scotopic ERG, retinal-layer thickness, and photoreceptor counts in Rho P23H/+ mice; effects disappeared after clearance.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9220944/",
+      "source_type": "primary_research"
+    },
+    {
+      "id": "yc001_direct_binding_boundary",
+      "claim": "YC-001 produced a bovine-opsin Trp-fluorescence EC50 of 0.98 +/- 0.05 uM, but direct stabilization of purified P23H mutant opsin has not been demonstrated.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5958115/",
+      "source_type": "primary_research"
+    }
+  ],
+  "current_inference": "YC-001 now has a connected preclinical chain from opsin binding through human-P23H cellular trafficking to temporary P23H-mouse retinal protection. Direct human-mutant binding, durable exposure, human photoreceptor survival, and patient benefit remain unresolved. YC-054 and YC-068 have not inherited YC-001's external validation."
+}

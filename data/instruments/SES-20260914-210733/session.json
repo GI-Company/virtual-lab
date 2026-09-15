@@ -1,0 +1,9 @@
+{
+  "session_id": "SES-20260914-210733",
+  "instrument_id": "ANDROID-001",
+  "start_utc": "2026-09-15T01:07:33.114321+00:00",
+  "metadata": {
+    "requested_rate_hz": "MULTI",
+    "sensor": "MULTI"
+  }
+}

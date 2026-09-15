@@ -1,0 +1,61 @@
+{
+  "audit_version": 2,
+  "endpoint": "RHO_P23H_TRAFFICKING",
+  "n_raw_records": 58,
+  "n_total_harmonized_measurements": 12,
+  "n_harmonized_measurements": 12,
+  "n_duplicate_source_rows": 0,
+  "n_conflicting_source_ids": 0,
+  "n_unique_compounds": 12,
+  "n_unique_scaffolds": 5,
+  "n_exact_unique_compounds": 12,
+  "n_publications": 1,
+  "n_assays": 1,
+  "largest_scaffold_fraction": 0.6666666666666666,
+  "censored_measurements": {
+    "lt": 0,
+    "gt": 0,
+    "exact": 12,
+    "approximate": 0,
+    "unknown": 0
+  },
+  "species_breakdown": {
+    "Mus musculus": 12
+  },
+  "cell_system_breakdown": {
+    "U2OS": 12
+  },
+  "source_breakdown": {
+    "Chen2018Benchmark": 12
+  },
+  "endpoint_breakdown": {
+    "RHO_P23H_TRAFFICKING": 12
+  },
+  "target_breakdown": {
+    "RHO": 12
+  },
+  "exclusion_reasons": {
+    "identity_quarantined": 26,
+    "missing_or_invalid_value": 20
+  },
+  "cohorts": [
+    {
+      "target": "RHO",
+      "species": "Mus musculus",
+      "variant": "P23H",
+      "cell_system": "U2OS",
+      "source": "Chen2018Benchmark",
+      "assay_id": "Chen2018:P23H:beta-gal:U2OS",
+      "measurement_type": "EC50",
+      "unit": "uM",
+      "n_exact_unique_compounds": 12,
+      "n_unique_scaffolds": 5,
+      "largest_scaffold_fraction": 0.6666666666666666
+    }
+  ],
+  "ml_eligibility": "ANALOGUE_ONLY",
+  "reason": "Insufficient exact endpoint evidence (<15 unique compounds in one cohort).",
+  "blocking_reasons": [],
+  "claim_limit": "Eligibility is a corpus screen, not validation or evidence of therapeutic efficacy.",
+  "snapshot_sha256": "3006fd895ee6d6075893c6cc46b5bb158fd9246d023ba7085e927d1dc595f208"
+}

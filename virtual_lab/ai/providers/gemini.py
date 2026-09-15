@@ -1,88 +1,85 @@
-import json
-from typing import List, Optional
+import os
 from google import genai
-from google.genai import types
+from typing import Optional
+from virtual_lab.ai.credentials import get_api_key
 
-from ..base import IntelligenceProvider, IntelligenceRequest, IntelligenceResponse
-from ..proposals import ExperimentProposal
-from ..credentials import get_api_key
-
-class GeminiProvider(IntelligenceProvider):
-    provider_id = "gemini"
-    
+class GeminiProvider:
     def __init__(self):
-        self._default_model = "gemini-3.6-flash"
+        self.client = None
+        self._initialize_client()
 
-    def _get_client(self) -> Optional[genai.Client]:
-        api_key = get_api_key(self.provider_id)
-        if not api_key:
-            return None
-        return genai.Client(api_key=api_key)
-
-    def models(self) -> List[str]:
-        return ["gemini-3.6-flash", "gemini-3.6-pro"]
-
-    def test_connection(self) -> bool:
-        client = self._get_client()
-        if not client:
-            return False
-        try:
-            # Just do a very basic check
-            client.models.get(model=self._default_model)
-            return True
-        except Exception:
-            return False
-
-    def supports_structured_output(self) -> bool:
-        return True
-
-    def complete(self, request: IntelligenceRequest) -> IntelligenceResponse:
-        client = self._get_client()
-        if not client:
-            raise RuntimeError("Gemini credentials not found or keychain unavailable.")
-            
-        config_kwargs = {}
-        if request.system_prompt:
-            config_kwargs["system_instruction"] = request.system_prompt
-            
-        if request.require_structured_output:
-            config_kwargs["response_mime_type"] = "application/json"
-            config_kwargs["response_schema"] = ExperimentProposal
-            
-        config = types.GenerateContentConfig(**config_kwargs)
-        
-        try:
-            response = client.models.generate_content(
-                model=self._default_model,
-                contents=request.user_prompt,
-                config=config
-            )
-        except Exception as e:
-            # Handle rate limits, quota, revoked keys, network loss
-            return IntelligenceResponse(
-                provider_id=self.provider_id,
-                model=self._default_model,
-                raw_text=f"AI Provider Error: {str(e)}. Please check your network connection, API key, and quotas."
-            )
-        
-        if request.require_structured_output:
-            try:
-                proposal_dict = json.loads(response.text)
-                proposal = ExperimentProposal(**proposal_dict)
-                return IntelligenceResponse(
-                    provider_id=self.provider_id,
-                    model=self._default_model,
-                    proposal=proposal
-                )
-            except Exception as e:
-                return IntelligenceResponse(
-                    provider_id=self.provider_id,
-                    model=self._default_model,
-                    raw_text=f"AI Validation Error: Received syntactically invalid or non-conforming JSON. ({str(e)})"
-                )
+    def _initialize_client(self):
+        # Always try to fetch from keyring first
+        api_key = get_api_key("gemini")
+        if api_key:
+            self.client = genai.Client(api_key=api_key)
         else:
-            return IntelligenceResponse(
-                provider_id=self.provider_id,
-                model=self._default_model,
-                raw_text=response.text
+            self.client = None
+
+    def is_configured(self) -> bool:
+        return self.client is not None
+
+    def test_connection(self, override_key: Optional[str] = None) -> bool:
+        """
+        Perform a minimal API request to verify the credential.
+        Raises an exception if the key is invalid or network fails.
+        """
+        test_client = genai.Client(api_key=override_key) if override_key else self.client
+        if not test_client:
+            raise ValueError("No API key provided to test.")
+            
+        # Minimal request to verify credentials
+        response = test_client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents='Respond with the word "OK".'
+        )
+        return "OK" in response.text
+
+    def generate_proposal(self, prompt: str, context: dict) -> tuple[str, dict]:
+        """
+        Calls Gemini to generate a proposal based on the prompt and scientific context.
+        Uses structured output to guarantee parsing into ExperimentProposal.
+        Returns the JSON string and the grounding metadata.
+        """
+        if not self.client:
+            raise RuntimeError("Gemini provider is not configured.")
+            
+        from virtual_lab.ai.proposals import ExperimentProposal
+        
+        system_instruction = (
+            "You are a scientific AI operating within VirtualLab. Your task is to generate "
+            "an experiment proposal to test hypotheses regarding the RHO P23H disease model. "
+            "Use the provided scientific context and rely on Google Search Grounding to support your rationale."
+        )
+        
+        full_prompt = f"Scientific Context: {context}\n\nResearcher Prompt: {prompt}"
+        
+        try:
+            # We use gemini-3.6-pro for complex structured reasoning with grounding
+            response = self.client.models.generate_content(
+                model='gemini-3.6-pro',
+                contents=full_prompt,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    response_schema=ExperimentProposal,
+                    tools=[{"google_search": {}}] # Enable Google Search Grounding
+                )
             )
+            
+            grounding_metadata = {}
+            if response.candidates and response.candidates[0].grounding_metadata:
+                metadata = response.candidates[0].grounding_metadata
+                # Extract search queries and chunks for provenance
+                if hasattr(metadata, 'web_search_queries'):
+                    grounding_metadata['queries'] = metadata.web_search_queries
+                if hasattr(metadata, 'grounding_chunks'):
+                    grounding_metadata['chunks'] = [
+                        {"uri": chunk.web.uri, "title": chunk.web.title} 
+                        for chunk in metadata.grounding_chunks if hasattr(chunk, 'web')
+                    ]
+                    
+            return response.text, grounding_metadata
+            
+        except Exception as e:
+            raise RuntimeError(f"Gemini API failure: {str(e)}")
