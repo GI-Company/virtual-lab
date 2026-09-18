@@ -31,3 +31,10 @@ class EpistemicState(Enum):
     INFERRED         = "INFERRED"
     MODEL_ASSUMPTION = "MODEL_ASSUMPTION"
     UNKNOWN          = "UNKNOWN"
+
+class QualityState(Enum):
+    VALID       = "VALID"
+    DEGRADED    = "DEGRADED"
+    INCOMPLETE  = "INCOMPLETE"
+    INVALID     = "INVALID"
+    QUARANTINED = "QUARANTINED"

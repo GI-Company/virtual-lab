@@ -318,38 +318,42 @@ class ObservationKind(Enum):
 # ExperimentObservation
 # ─────────────────────────────────────────────────────────────────────────────
 
-@dataclass
+@dataclass(frozen=True)
 class ExperimentObservation:
     """
-    An immutable scientific observation record attached to a VirtualExperiment.
-
-    experiment_id must always be a valid VirtualExperiment.id.
-    Observations without an active experiment go to ObservationStagingArea.
+    Base class for scientific observations attached to a VirtualExperiment.
     """
     observation_id: str
-    experiment_id: str            # FK → VirtualExperiment.id
-    session_id: str               # MeasurementSession.id or run_id
-    instrument_id: str            # device serial, "rdkit", "simulation", etc.
+    experiment_id: str
+    session_id: str
+    instrument_id: str
     kind: ObservationKind
-
     quantities: List[QuantityDescriptor]
-
-    # Artifact provenance
     artifact_path: str
     artifact_sha256: str
-    acquisition_utc: str          # ISO-8601
-
-    # Aggregate stats (may be 0 for camera/chemistry)
+    acquisition_utc: str
     sample_count: int = 0
     duration_s: float = 0.0
-
-    # Epistemic classification
-    epistemic_state: EpistemicState = EpistemicState.MEASURED
-
-    # Optional
-    calibration_id: Optional[str] = None
     notes: Optional[str] = None
+    calibration_id: Optional[str] = None
 
-    @staticmethod
-    def new_id() -> str:
-        return f"OBS-{uuid.uuid4()}"
+@dataclass(frozen=True)
+class RawObservation(ExperimentObservation):
+    """
+    Immutable representation of raw physical measurements directly from the instrument.
+    Cannot be modified. Must maintain EpistemicState.MEASURED.
+    """
+    epistemic_state: EpistemicState = field(default=EpistemicState.MEASURED, init=False)
+
+@dataclass(frozen=True)
+class NormalizedObservation(ExperimentObservation):
+    """
+    Observation derived via calibration, cleanup, or unit normalization.
+    Must maintain EpistemicState.CALCULATED, DERIVED, or INFERRED.
+    """
+    epistemic_state: EpistemicState = EpistemicState.CALCULATED
+    parent_observation_id: Optional[str] = None
+
+    def __post_init__(self):
+        if self.epistemic_state == EpistemicState.MEASURED:
+            raise ValueError("NormalizedObservation cannot claim MEASURED epistemic state. It must be DERIVED, CALCULATED, or INFERRED.")

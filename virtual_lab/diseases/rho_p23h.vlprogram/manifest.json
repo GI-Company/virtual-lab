@@ -1,0 +1,47 @@
+{
+  "format": "vlprogram_1.0",
+  "program_id": "rho_p23h",
+  "state_schema": [
+    "R_f",
+    "R_ER",
+    "R_s",
+    "S",
+    "V"
+  ],
+  "initial_state": {
+    "P23H_UNTREATED": [
+      0.1,
+      0.8,
+      0.05,
+      0.5,
+      0.8
+    ],
+    "REFERENCE_HEALTHY": [
+      0.8,
+      0.1,
+      0.8,
+      0.05,
+      1.0
+    ]
+  },
+  "overrides_schema": {
+    "k_syn": "float",
+    "k_mis": "float",
+    "k_traffic": "float",
+    "k_ERAD": "float",
+    "k_deg_f": "float",
+    "k_deg_s": "float",
+    "k_internalize": "float",
+    "k_stress": "float",
+    "k_recover": "float",
+    "k_repair": "float",
+    "k_death": "float",
+    "rescue_max": "float",
+    "ec50": "float",
+    "hill_h": "float"
+  },
+  "artifacts": {
+    "rho_system.py": "ebf6b7ffde798cda0479b1e010eb00020b48296ad685c0feadc8adce3730c39b"
+  },
+  "vlprogram_signature": "891b9bd48e3c6acc35166169b325eb1a6b525e0a280646c25deca8d62b631eb2"
+}

@@ -1,0 +1,11 @@
+{
+  "device_timebase": 1672531200000,
+  "message_type": "measurement",
+  "protocol_version": "1.0",
+  "sensor": "accelerometer",
+  "stream_id": "sensor_001",
+  "unit": "m/s2",
+  "x": 0.0,
+  "y": 9.81,
+  "z": 0.0
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MeasurementPacket",
+  "type": "object",
+  "properties": {
+    "protocol_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "message_type": {
+      "type": "string",
+      "const": "measurement"
+    },
+    "stream_id": {
+      "type": "string"
+    },
+    "device_timebase": {
+      "type": "integer"
+    },
+    "sensor": {
+      "type": "string"
+    },
+    "x": {
+      "type": "number"
+    },
+    "y": {
+      "type": "number"
+    },
+    "z": {
+      "type": "number"
+    },
+    "unit": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "protocol_version", 
+    "message_type", 
+    "stream_id", 
+    "device_timebase", 
+    "sensor", 
+    "unit"
+  ]
+}

@@ -1,54 +1,75 @@
 import typing
 from pydantic import BaseModel, Field
 
-# We use Pydantic models for explicit schema validation in the Agent loop,
-# though the google-genai SDK also supports raw Python functions.
+# Operational PoC v0.1: L1 Autonomy Constraint
+# The model can only read context and propose state changes. It has ZERO execution authority.
 
-class CreateProposalArgs(BaseModel):
-    hypothesis: str = Field(description="The scientific hypothesis being tested.")
-    operation: str = Field(description="Type of operation, e.g., POPULATION_COUNTERFACTUAL")
-    disease: str = Field(description="Disease model identifier, e.g., rho_p23h")
-    compound: str = Field(description="Compound identifier, e.g., YC-001 (EMPIRICAL) or YC-054 [PREDICTED PARAMETERS / INCOMPLETE]")
-    ensemble_size: int = Field(description="Number of virtual systems to simulate (ensemble members)")
-    dose_uM: float = Field(description="Dose concentration in µM")
-    outputs: list[str] = Field(description="List of states to track, e.g., ['R_s', 'S', 'V']")
-    rationale: str = Field(description="Scientific rationale for this proposed experiment")
-    overrides: dict[str, float] = Field(description="Dictionary mapping parameter names to their proposed override values.")
+class GetHypothesisArgs(BaseModel):
+    id: str = Field(description="The ID of the hypothesis to retrieve.")
 
-class ExecuteExperimentArgs(BaseModel):
-    proposal_id: str = Field(description="The ID of the proposal to execute.")
+class ProposePredictionArgs(BaseModel):
+    hypothesis_id: str = Field(description="The hypothesis this prediction supports.")
+    expected_outcome: str = Field(description="The predicted outcome.")
+    rationale: str = Field(description="Scientific rationale for this prediction.")
 
-class ReadSimulationResultsArgs(BaseModel):
-    run_id: str = Field(description="The ID of the simulation run to read.")
+class ProposeComparisonArgs(BaseModel):
+    prediction_id: str = Field(description="The prediction to compare.")
+    observation_id: str = Field(description="The observation to compare against.")
 
-def create_and_validate_proposal(hypothesis: str, operation: str, disease: str, compound: str, ensemble_size: int, dose_uM: float, outputs: list[str], rationale: str, overrides: dict[str, float]) -> str:
-    """
-    Creates an experiment proposal and validates it against the current epistemic state.
-    Returns the proposal_id if successful.
-    """
-    # This is a stub function. The actual execution will be intercepted by the AgentWorker
-    # and passed to the ProposalService.
+def get_hypothesis(id: str) -> str:
+    """Retrieve an existing hypothesis from the authoritative state."""
     pass
 
-def execute_experiment(proposal_id: str) -> str:
-    """
-    Executes a previously created proposal.
-    Returns the run_id of the executed experiment.
-    """
-    # Stub function. Execution intercepted by AgentWorker and passed to ExperimentController.
+def get_protocol(id: str) -> str:
+    """Retrieve a frozen protocol."""
     pass
 
-def read_simulation_results(run_id: str) -> str:
-    """
-    Reads the results of a completed simulation run.
-    Returns a summary of the epistemic outcomes.
-    """
-    # Stub function. Execution intercepted by AgentWorker.
+def get_prediction(id: str) -> str:
+    """Retrieve a frozen prediction."""
     pass
 
-# The list of callable tools for the Gemini SDK
+def get_observation(id: str) -> str:
+    """Retrieve an observation."""
+    pass
+
+def search_evidence(query: str) -> str:
+    """Search for relevant evidence in the vault."""
+    pass
+
+def propose_hypothesis(description: str) -> str:
+    """Propose a new hypothesis for human review. Does NOT create authoritative truth."""
+    pass
+
+def propose_prediction(hypothesis_id: str, expected_outcome: str, rationale: str) -> str:
+    """Propose a prediction."""
+    pass
+
+def propose_comparison(prediction_id: str, observation_id: str) -> str:
+    """Propose comparing an observation to a prediction."""
+    pass
+
+def propose_decision(comparison_ids: list[str], outcome: str) -> str:
+    """Propose a scientific decision based on comparisons."""
+    pass
+
+def request_human_approval(proposal_id: str) -> str:
+    """Submit a proposal to the human operator for Ed25519 signature."""
+    pass
+
+def explain_provenance(id: str) -> str:
+    """Retrieve the Genesis audit trail for an object."""
+    pass
+
 AGENT_TOOLS = [
-    create_and_validate_proposal,
-    execute_experiment,
-    read_simulation_results
+    get_hypothesis,
+    get_protocol,
+    get_prediction,
+    get_observation,
+    search_evidence,
+    propose_hypothesis,
+    propose_prediction,
+    propose_comparison,
+    propose_decision,
+    request_human_approval,
+    explain_provenance
 ]
