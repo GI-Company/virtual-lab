@@ -1,0 +1,17 @@
+{
+  "message_type": "INSTRUMENT_DESCRIPTOR",
+  "schema_version": "1",
+  "device_id": "DEV-123",
+  "instrument_type": "PhoneCamera",
+  "manufacturer": null,
+  "model": null,
+  "software_version": null,
+  "protocol_profiles": [
+    "Core",
+    "Camera Profile v1"
+  ],
+  "capabilities": [
+    "telemetry",
+    "camera"
+  ]
+}

@@ -1,0 +1,12 @@
+test_01_hview_node_selection (__main__.TestStageEUIIntegration.test_01_hview_node_selection) ... ERROR
+test_02_worker_thread_isolation (__main__.TestStageEUIIntegration.test_02_worker_thread_isolation) ... ok
+test_03_dag_signals_order (__main__.TestStageEUIIntegration.test_03_dag_signals_order) ... ok
+test_04_simulated_badge (__main__.TestStageEUIIntegration.test_04_simulated_badge) ... FAIL
+test_05_proposal_approval_creates_decision (__main__.TestStageEUIIntegration.test_05_proposal_approval_creates_decision) ... FAIL
+test_06_action_approval_policy_engine (__main__.TestStageEUIIntegration.test_06_action_approval_policy_engine) ... ok
+test_07_reject_does_not_execute (__main__.TestStageEUIIntegration.test_07_reject_does_not_execute) ... ok
+test_08_stale_hview_warning (__main__.TestStageEUIIntegration.test_08_stale_hview_warning) ... ok
+test_09_genesis_events_appear (__main__.TestStageEUIIntegration.test_09_genesis_events_appear) ... ok
+test_10_local_mode_blocks_cloud (__main__.TestStageEUIIntegration.test_10_local_mode_blocks_cloud) ... ok
+test_11_episode_cancellation (__main__.TestStageEUIIntegration.test_11_episode_cancellation) ... ok
+test_12_lifecycle_start_close (__main__.TestStageEUIIntegration.test_12_lifecycle_start_close) ... 

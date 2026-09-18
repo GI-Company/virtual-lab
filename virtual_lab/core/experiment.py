@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from virtual_lab.core.provenance import ProvenanceTracker
 from virtual_lab.engines.registry import EngineRegistry
+from virtual_lab.domain.observation import ExperimentObservation
 
 class EnsembleKind(Enum):
     EPISTEMIC_UNCERTAINTY = "epistemic_uncertainty"
@@ -16,24 +17,40 @@ class VirtualExperiment:
                  disease_id: str, 
                  compound_id: str, 
                  evidence_snapshot: str,
-                 parent_id: Optional[str] = None):
+                 parent_id: Optional[str] = None,
+                 label: Optional[str] = None):
         self.id = str(uuid.uuid4())
         self.disease_id = disease_id
         self.compound_id = compound_id
         self.evidence_snapshot = evidence_snapshot
         self.parent_id = parent_id
+        self.label = label
         
         self.parameters: Dict[str, Any] = {}
         self.results: Dict[str, Any] = {}
-        self.status = "created"
+        self.status = "active"
         self.provenance = ProvenanceTracker()
+        
+        self.observations: List[ExperimentObservation] = []
         
         self.provenance.record("experiment_created", {
             "id": self.id,
             "disease_id": self.disease_id,
             "compound_id": self.compound_id,
             "evidence_snapshot": self.evidence_snapshot,
-            "parent_id": self.parent_id
+            "parent_id": self.parent_id,
+            "label": self.label
+        })
+
+    def attach_observation(self, observation: ExperimentObservation):
+        """Attach an observation to this experiment."""
+        if observation.experiment_id != self.id:
+            raise ValueError(f"Observation {observation.observation_id} belongs to experiment {observation.experiment_id}, not {self.id}")
+        self.observations.append(observation)
+        self.provenance.record("observation_attached", {
+            "observation_id": observation.observation_id,
+            "kind": observation.kind.value,
+            "session_id": observation.session_id
         })
 
     def configure(self, **kwargs):
@@ -69,7 +86,8 @@ class VirtualExperiment:
             disease_id=self.disease_id,
             compound_id=self.compound_id,
             evidence_snapshot=self.evidence_snapshot,
-            parent_id=self.id
+            parent_id=self.id,
+            label=name
         )
         # Deep copy parameters so modifications don't affect parent
         child.parameters = copy.deepcopy(self.parameters)

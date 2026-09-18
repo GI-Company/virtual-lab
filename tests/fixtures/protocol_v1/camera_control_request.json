@@ -1,0 +1,13 @@
+{
+  "message_type": "CAMERA_CONTROL_REQUEST",
+  "schema_version": "1",
+  "request_id": "REQ-1",
+  "device_id": "DEV-123",
+  "camera_stream_key": {
+    "camera_id": "0",
+    "logical_camera_id": null,
+    "physical_camera_id": null
+  },
+  "control_type": "GET_CAPABILITIES",
+  "requested_parameters": null
+}

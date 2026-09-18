@@ -1,0 +1,15 @@
+{
+  "message_type": "CAMERA_CONTROL_RESULT",
+  "schema_version": "1",
+  "request_id": "REQ-1",
+  "device_id": "DEV-123",
+  "overall_status": "APPLIED",
+  "parameter_results": {
+    "exposure_time_ns": {
+      "requested": 1000,
+      "applied": 1000,
+      "status": "APPLIED"
+    }
+  },
+  "error_message": null
+}

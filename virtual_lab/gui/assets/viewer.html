@@ -4,6 +4,18 @@
 <body><div id="app"></div><div id="status">Loading local structure viewer…</div><script>
 let viewer, backend, pendingFocus=null, structureLoaded=false;
 function status(text){document.getElementById('status').textContent=text;}
+
+// Intercept fetch to enforce "Network retrieval: DISABLED" constraint
+const originalFetch = window.fetch;
+window.fetch = async (...args) => {
+    let url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : "");
+    if (url && !url.startsWith('file://') && !url.startsWith('qrc://') && !url.startsWith('blob:') && !url.startsWith('data:')) {
+        console.warn('Network egress blocked for URL: ' + url);
+        throw new TypeError('Failed to fetch: Network egress is strictly DISABLED in Local Research Mode.');
+    }
+    return originalFetch(...args);
+};
+
 const ready=(async()=>{
     viewer=await molstar.Viewer.create('app',{layoutIsExpanded:false,layoutShowControls:false,layoutShowRemoteState:false,layoutShowSequence:true,layoutShowLog:false,layoutShowLeftPanel:false,viewportShowExpand:false});
     viewer.plugin.canvas3d.setProps({renderer:{backgroundColor:0x0d141d}});

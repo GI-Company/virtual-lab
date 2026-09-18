@@ -1,0 +1,27 @@
+{
+  "message_type": "CAMERA_CAPABILITIES",
+  "schema_version": "1",
+  "device_id": "DEV-123",
+  "camera_stream_key": {
+    "camera_id": "0",
+    "logical_camera_id": null,
+    "physical_camera_id": null
+  },
+  "manual_sensor_supported": null,
+  "manual_focus_supported": null,
+  "exposure_time_range_ns": null,
+  "iso_range": null,
+  "minimum_focus_distance_diopters": null,
+  "af_modes": [],
+  "ae_modes": [],
+  "ae_compensation_range": null,
+  "ae_compensation_step": null,
+  "awb_modes": [],
+  "awb_lock_supported": null,
+  "fps_ranges": [],
+  "resolutions": [],
+  "zoom_ratio_range": null,
+  "stabilization_modes": [],
+  "torch_supported": null,
+  "raw_capability": null
+}

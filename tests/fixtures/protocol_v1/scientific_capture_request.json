@@ -1,0 +1,12 @@
+{
+  "message_type": "SCIENTIFIC_CAPTURE_REQUEST",
+  "schema_version": "1",
+  "request_id": "REQ-2",
+  "device_id": "DEV-123",
+  "camera_stream_key": {
+    "camera_id": "0",
+    "logical_camera_id": null,
+    "physical_camera_id": null
+  },
+  "parameters": {}
+}

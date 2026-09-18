@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Protocol, Any, Dict
 from dataclasses import dataclass
-from .parameters import EpistemicState
+from virtual_lab.domain.epistemics import EpistemicState
 
 @dataclass
 class AssayResult:

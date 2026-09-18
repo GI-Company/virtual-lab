@@ -1,0 +1,9 @@
+{
+  "message_type": "SCIENTIFIC_FRAME_ACK",
+  "schema_version": "1",
+  "request_id": "REQ-2",
+  "device_id": "DEV-123",
+  "status": "COMMITTED",
+  "artifact_sha256": "abcdef123456",
+  "error_message": null
+}

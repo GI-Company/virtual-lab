@@ -20,17 +20,14 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 
 class InstrumentGateway(QObject):
-    # Public fine-grained signals
-    channelConnected = Signal(str, str) # path, connection_id
-    channelBound = Signal(str, str, str) # path, connection_id, device_id
-    channelDisconnected = Signal(str, str, str, int) # device_id, channel_type, connection_id, generation
-    channelError = Signal(str, str, str) # path, connection_id, error
+    channelConnected = Signal(str, str)
+    channelBound = Signal(str, str, str)
+    channelDisconnected = Signal(str, str, str, int)
+    channelError = Signal(str, str, str)
     
-    # Backward compatible projection signals
-    instrumentConnected = Signal(str, str) # device_id, remote_addr
-    instrumentDisconnected = Signal(str) # device_id
+    instrumentConnected = Signal(str, str)
+    instrumentDisconnected = Signal(str)
     
-    # Data signals
     measurementReceived = Signal(object)
     binaryMessageReceived = Signal(object)
     controlMessageReceived = Signal(object)
@@ -45,7 +42,6 @@ class InstrumentGateway(QObject):
         
         self.registry = ConnectionRegistry()
         
-        # Legacy lists, maintained for compatibility but registry is source of truth
         self.sensor_clients = []
         self.camera_clients = []
         self.control_clients = []
@@ -128,14 +124,18 @@ class InstrumentGateway(QObject):
                 self.registry.bind_connection(conn_id, device_id)
                 self.channelBound.emit(path, conn_id, device_id)
                 
-                # Projection logic
                 dev_state = self.registry.devices.get(device_id)
                 if dev_state and len([c for c in [dev_state.sensors, dev_state.camera, dev_state.control] if c and c.state.value != "DISCONNECTED"]) == 1:
-                    # First channel to bind triggers the global connect
                     self.instrumentConnected.emit(device_id, conn.remote_address)
             except ValueError as e:
                 logger.error("[%s][%s] immutable binding error: %s", c_type, conn_id, e)
                 conn.socket.close()
+
+    def _peek_message_type(self, raw: str) -> str:
+        try:
+            return json.loads(raw).get("message_type", "")
+        except:
+            return ""
 
     def _try_parse_hello(self, path: str, conn_id: str, raw: str) -> bool:
         try:
@@ -163,7 +163,14 @@ class InstrumentGateway(QObject):
                 logger.error("[%s][%s] protocol mismatch: text message on non-sensors channel", conn_id, conn.channel_type.upper())
                 return
             
-        if self._try_parse_hello("/sensors", conn_id, raw):
+        msg_type = self._peek_message_type(raw)
+        
+        if msg_type == "CHANNEL_HELLO":
+            self._try_parse_hello("/sensors", conn_id, raw)
+            return
+            
+        if msg_type != "MEASUREMENT_PACKET":
+            logger.error("[%s][SENSORS] Protocol error: Unexpected message_type %s on /sensors", conn_id, msg_type)
             return
             
         try:
@@ -171,7 +178,6 @@ class InstrumentGateway(QObject):
             if not measurement.instrument_id or measurement.instrument_id == "UNKNOWN":
                 logger.warning("[%s][SENSORS] DEVICE_ID MISSING - CHANNEL UNBOUND", conn_id)
             else:
-                logger.debug("[%s][SENSORS] Measurement decoded", conn_id)
                 self._handle_late_binding("/sensors", conn_id, measurement.instrument_id)
                 if conn and conn.state != SensorChannelState.STREAMING:
                     conn.state = SensorChannelState.STREAMING
@@ -192,7 +198,11 @@ class InstrumentGateway(QObject):
             conn.last_activity_utc = int(time.time()*1000)
             conn.message_count += 1
             
-        self._try_parse_hello("/camera", conn_id, raw)
+        msg_type = self._peek_message_type(raw)
+        if msg_type == "CHANNEL_HELLO":
+            self._try_parse_hello("/camera", conn_id, raw)
+        else:
+            logger.error("[%s][CAMERA] Protocol error: Unexpected text message_type %s on /camera", conn_id, msg_type)
 
     def _on_binary_message(self, socket, conn_id, raw_bytes: bytes):
         conn = self.registry.get_connection(conn_id)
@@ -212,7 +222,6 @@ class InstrumentGateway(QObject):
         
         try:
             frame = self.camera_decoder.decode(raw_bytes)
-            logger.debug("[%s][CAMERA] CameraFrame decoded seq=%s", conn_id, frame.frame_sequence)
             self._handle_late_binding("/camera", conn_id, frame.device_id)
             if conn and conn.state != CameraChannelState.STREAMING:
                 conn.state = CameraChannelState.STREAMING
@@ -236,7 +245,13 @@ class InstrumentGateway(QObject):
                 logger.error("[%s][%s] protocol mismatch: text message on non-control channel", conn_id, conn.channel_type.upper())
                 return
             
-        if self._try_parse_hello("/control", conn_id, raw):
+        msg_type = self._peek_message_type(raw)
+        if msg_type == "CHANNEL_HELLO":
+            self._try_parse_hello("/control", conn_id, raw)
+            return
+            
+        if msg_type not in ("CAMERA_CAPABILITIES", "CAMERA_CONTROL_RESULT", "CAMERA_STATE", "SCIENTIFIC_CAPTURE_RESULT", "INSTRUMENT_DESCRIPTOR"):
+            logger.error("[%s][CONTROL] Protocol error: Unexpected message_type %s on /control", conn_id, msg_type)
             return
             
         try:
@@ -252,8 +267,8 @@ class InstrumentGateway(QObject):
             dev_id = result["capabilities"].camera_stream_key.device_id
             self._handle_late_binding("/control", conn_id, dev_id)
             self.controlCapabilityReceived.emit(result["capabilities"])
-        elif result["type"] == "RESPONSE":
-            self.controlMessageReceived.emit(result)
+        elif result["type"] == "CONTROL_RESULT":
+            self.controlMessageReceived.emit(result["result"])
 
     def _on_disconnect(self, socket, path, conn_id):
         c_type = path.strip("/").upper()
@@ -265,7 +280,7 @@ class InstrumentGateway(QObject):
         try:
             self.channelDisconnected.emit(dev_id, c_type, conn_id, gen)
         except RuntimeError:
-            pass # Signal source deleted during application teardown
+            pass
         self.registry.remove_connection(conn_id)
         
         if path == "/sensors" and socket in self.sensor_clients:
@@ -280,13 +295,11 @@ class InstrumentGateway(QObject):
         if dev_id != "UNBOUND":
             dev_state = self.registry.devices.get(dev_id)
             if dev_state:
-                # If all channels are disconnected, project a global disconnect
                 if dev_state.overall_state().value == "DISCONNECTED":
                     self.instrumentDisconnected.emit(dev_id)
 
     def send_control_message(self, msg: dict, device_id: str = None):
         if not device_id:
-            # Fallback for legacy
             if not self.control_clients:
                 self.gatewayError.emit("CONTROL CHANNEL DISCONNECTED")
                 return

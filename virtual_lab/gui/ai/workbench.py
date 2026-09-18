@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QThreadPool
 import json
 
 from virtual_lab.ai.providers.gemini import GeminiProvider
+from virtual_lab.ai.providers.mlx_local import MLXLocalProvider
 from virtual_lab.gui.ai.settings_dialog import SettingsDialog
 from virtual_lab.ai.context import ScientificContext
 from virtual_lab.ai.agent_loop import AgentWorker
@@ -13,7 +14,9 @@ class AIWorkbench(QWidget):
     def __init__(self, workspace, parent=None):
         super().__init__(parent)
         self.workspace = workspace
-        self.provider = GeminiProvider()
+        
+        self._mlx = None
+        self.provider = None
         self.thread_pool = QThreadPool.globalInstance()
         self.chat_session = None
         
@@ -46,11 +49,11 @@ class AIWorkbench(QWidget):
         # Page 0: Not Configured
         self.page_not_configured = QWidget()
         pnc_layout = QVBoxLayout(self.page_not_configured)
-        lbl_nc = QLabel("GEMINI\n● NOT CONFIGURED\n\nAgentic mode requires API credentials.")
-        lbl_nc.setAlignment(Qt.AlignCenter)
-        lbl_nc.setStyleSheet("font-size: 14px; color: #ef4444;")
+        self.lbl_not_configured = QLabel()
+        self.lbl_not_configured.setAlignment(Qt.AlignCenter)
+        self.lbl_not_configured.setStyleSheet("font-size: 14px; color: #ef4444;")
         pnc_layout.addStretch()
-        pnc_layout.addWidget(lbl_nc)
+        pnc_layout.addWidget(self.lbl_not_configured)
         pnc_layout.addStretch()
         self.stack.addWidget(self.page_not_configured)
         
@@ -101,6 +104,22 @@ class AIWorkbench(QWidget):
         prompt_layout.addWidget(self.btn_generate)
         pa_layout.addLayout(prompt_layout)
         
+        # Reasoning panel (hidden until model starts thinking)
+        self.grp_reasoning = QGroupBox("Model Reasoning")
+        self.grp_reasoning.setStyleSheet(
+            "QGroupBox { border: 1px solid #334155; color: #64748b; font-size: 10px; margin-top: 1ex; }"
+        )
+        reasoning_layout = QVBoxLayout(self.grp_reasoning)
+        self.txt_reasoning = QTextEdit()
+        self.txt_reasoning.setReadOnly(True)
+        self.txt_reasoning.setMaximumHeight(100)
+        self.txt_reasoning.setStyleSheet(
+            "background-color: #0f172a; color: #475569; font-size: 11px; font-style: italic;"
+        )
+        reasoning_layout.addWidget(self.txt_reasoning)
+        self.grp_reasoning.hide()
+        pa_layout.addWidget(self.grp_reasoning)
+        
         self.stack.addWidget(self.page_agent)
         main_layout.addWidget(self.stack)
         
@@ -111,17 +130,17 @@ class AIWorkbench(QWidget):
         self._update_provider_status()
 
     def _update_provider_status(self):
-        self.provider = GeminiProvider()
-        if self.provider.is_configured():
-            self.lbl_provider_status.setText("Gemini  ● AVAILABLE")
-            self.lbl_provider_status.setStyleSheet("color: #22c55e; font-weight: bold;")
-            self.stack.setCurrentWidget(self.page_agent)
-        else:
-            self.lbl_provider_status.setText("Gemini  ● NOT CONFIGURED")
-            self.lbl_provider_status.setStyleSheet("color: #ef4444; font-weight: bold;")
-            self.stack.setCurrentWidget(self.page_not_configured)
+        # AIWorkbench is legacy and feature-gated. Do not initialize providers automatically.
+        self.lbl_provider_status.setText("Legacy AIWorkbench  ● DORMANT")
+        self.lbl_provider_status.setStyleSheet("color: #64748b; font-weight: bold;")
+        self.lbl_not_configured.setText(
+            "LEGACY AI COPILOT\n● DORMANT\n\n"
+            "This component is feature-gated. Use Local Research Mode instead."
+        )
+        self.stack.setCurrentWidget(self.page_not_configured)
 
     def _open_settings(self):
+        # Allow enabling if they explicitly go to settings? For now just open the dialog.
         dlg = SettingsDialog(self)
         if dlg.exec():
             self._update_provider_status()
@@ -158,9 +177,11 @@ class AIWorkbench(QWidget):
             numerical_validation="mock"
         )
         
-        worker = AgentWorker(prompt, context, self.chat_session)
+        worker = AgentWorker(prompt, context, self.chat_session, self.controller)
         worker.signals.state_changed.connect(self._on_state)
         worker.signals.message_received.connect(self._on_message)
+        worker.signals.reasoning_received.connect(self._on_reasoning)
+        worker.signals.tool_executing.connect(self._on_tool_executing)
         worker.signals.tool_call_requested.connect(self._on_tool)
         worker.signals.finished.connect(self._on_finished)
         worker.signals.error.connect(self._on_error)
@@ -173,11 +194,21 @@ class AIWorkbench(QWidget):
     def _on_state(self, state_msg):
         self.lbl_state.setText(state_msg)
 
+    def _on_reasoning(self, reasoning: str):
+        self.grp_reasoning.show()
+        self.txt_reasoning.setPlainText(reasoning)
+
+    def _on_tool_executing(self, name: str, args: dict):
+        self.chat_history.append(
+            f"<span style='color: #f59e0b;'>[TOOL ▶ {name}]</span>\n"
+        )
+
     def _on_error(self, err_msg):
         self.chat_history.append(f"<span style='color: #ef4444;'><b>System Error:</b> {err_msg}</span>\n")
         self._on_finished()
 
     def _on_message(self, msg):
+        self.grp_reasoning.hide()
         self.chat_history.append(f"<b>Agent:</b> {msg}\n")
         
     def _on_finished(self):

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import numpy as np
+from virtual_lab.domain.epistemics import EpistemicState
 
 # A stub enum to match what the user requested
 class EnsembleKind:
@@ -23,6 +24,7 @@ class SimulationResult:
     ensemble_kind: str # e.g. "EPISTEMIC_UNCERTAINTY"
     members: int
     seed: int
+    epistemic_state: EpistemicState
 
     execution_metadata: Dict[str, Any]
 
@@ -49,9 +51,10 @@ class SimulationResult:
             endpoint_summaries={},
             numerical_check=data.get("numerical_check", {}),
             parameter_samples={k: np.array(v) for k, v in data.get("parameter_samples", {}).items()},
-            ensemble_kind=data.get("epistemic_state", "EPISTEMIC_UNCERTAINTY"),
+            ensemble_kind=data.get("ensemble_kind", "EPISTEMIC_UNCERTAINTY"),
             members=data.get("config", {}).get("members", 0),
             seed=data.get("config", {}).get("seed", 42),
+            epistemic_state=EpistemicState.SIMULATED,
             execution_metadata={
                 "runtime_seconds": data.get("runtime_seconds", 0),
                 "numpy_version": data.get("numpy_version", "")

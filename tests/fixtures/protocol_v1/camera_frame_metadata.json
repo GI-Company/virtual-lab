@@ -1,0 +1,30 @@
+{
+  "message_type": "CAMERA_PREVIEW_FRAME",
+  "schema_version": "1",
+  "device_id": "DEV-123",
+  "stream_id": "STR-001",
+  "camera_stream_key": {
+    "camera_id": "0",
+    "logical_camera_id": null,
+    "physical_camera_id": null
+  },
+  "frame_sequence": 100,
+  "device_timestamp_ns": 2000000000,
+  "device_timebase": "MONOTONIC",
+  "device_utc_ns": null,
+  "width": 1920,
+  "height": 1080,
+  "encoding": "JPEG",
+  "orientation": 90,
+  "lens_facing": "BACK",
+  "focal_length_mm": 4.0,
+  "exposure_time_ns": null,
+  "sensor_sensitivity_iso": null,
+  "focus_distance_diopters": null,
+  "scientific_state": "MEASURED",
+  "acquisition_type": "CAMERA_FRAME",
+  "representation": "ISP_PROCESSED",
+  "request_id": null,
+  "payload_size_bytes": 102400,
+  "payload_sha256": null
+}

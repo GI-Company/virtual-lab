@@ -1,0 +1,24 @@
+{
+  "message_type": "MEASUREMENT_PACKET",
+  "schema_version": "1",
+  "device_id": "DEV-123",
+  "stream_id": "STR-001",
+  "source_session_id": null,
+  "measurement_type": "MAGNETIC_FIELD",
+  "sensor_id": "mag0",
+  "sequence": 42,
+  "device_timestamp_ns": 1000000000,
+  "device_timebase": "MONOTONIC",
+  "device_utc_ns": null,
+  "values": {
+    "bx": 1.0,
+    "by": 2.0,
+    "bz": 3.0
+  },
+  "units": {
+    "bx": "uT",
+    "by": "uT",
+    "bz": "uT"
+  },
+  "accuracy": null
+}

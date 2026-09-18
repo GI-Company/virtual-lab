@@ -48,7 +48,8 @@ class AnalysisWorkspace(QWidget):
         
         # Endpoint Distribution
         dist_panel = QVBoxLayout()
-        dist_panel.addWidget(QLabel("Endpoint Distribution (final_state)"))
+        self.lbl_dist_title = QLabel("Endpoint Distribution (final_state)")
+        dist_panel.addWidget(self.lbl_dist_title)
         self.plot_dist = pg.PlotWidget(background="#16202d")
         self.plot_dist.setLabel('bottom', "Normalized State")
         self.plot_dist.setLabel('left', "Count")
@@ -57,7 +58,8 @@ class AnalysisWorkspace(QWidget):
         
         # PRCC Table
         prcc_panel = QVBoxLayout()
-        prcc_panel.addWidget(QLabel("PRCC (Monotonic Association)"))
+        self.lbl_prcc_title = QLabel("PRCC (Monotonic Association)")
+        prcc_panel.addWidget(self.lbl_prcc_title)
         self.table_prcc = QTableWidget(0, 2)
         self.table_prcc.setHorizontalHeaderLabels(["Parameter", "PRCC"])
         self.table_prcc.horizontalHeader().setStretchLastSection(True)
@@ -107,6 +109,8 @@ class AnalysisWorkspace(QWidget):
         state_name = STATE_NAMES[idx]
         
         # 1. Endpoint Distribution
+        epistemic_tag = f"[{r.epistemic_state.value}]" if hasattr(r, 'epistemic_state') else ""
+        self.lbl_dist_title.setText(f"Endpoint Distribution (final_state) {epistemic_tag}")
         self.plot_dist.clear()
         final_state = r.final_state[:, state_idx]
         
@@ -138,6 +142,7 @@ class AnalysisWorkspace(QWidget):
             
         # 3. PRCC Table
         # We calculate PRCC on the fly using Spearman correlation as a proxy for monotonic association
+        self.lbl_prcc_title.setText("PRCC (Monotonic Association) [CALCULATED]")
         self.table_prcc.clearContents()
         y = r.final_state[:, state_idx]
         

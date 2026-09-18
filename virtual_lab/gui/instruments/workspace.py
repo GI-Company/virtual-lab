@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QPushButton, QGroupBox, QSplitter, QFrame, QComboBox, QStackedWidget)
+                               QPushButton, QGroupBox, QSplitter, QFrame, QComboBox, QStackedWidget, QTabWidget, QScrollArea)
 from PySide6.QtCore import Qt, QTimer
 import pyqtgraph as pg
 import math
@@ -37,8 +37,20 @@ class AdbDiscoveryRunner(QRunnable):
 class AdbReverseRunner(QRunnable):
     def __init__(self, serial):
         super().__init__()
+        self.signals = AdbSignals()
+        
+class AdbDisconnectRunner(QRunnable):
+    def __init__(self, serial):
+        super().__init__()
         self.serial = serial
         self.signals = AdbSignals()
+        
+    def run(self):
+        try:
+            subprocess.run(["adb", "-s", self.serial, "reverse", "--remove", "tcp:8765"], capture_output=True, timeout=3)
+            self.signals.reverse_verified.emit(self.serial, True, "removed")
+        except Exception as e:
+            self.signals.reverse_verified.emit(self.serial, False, str(e))
         
     def run(self):
         try:
@@ -60,8 +72,20 @@ class AdbReverseRunner(QRunnable):
 class AdbLaunchRunner(QRunnable):
     def __init__(self, serial):
         super().__init__()
+        self.signals = AdbSignals()
+        
+class AdbDisconnectRunner(QRunnable):
+    def __init__(self, serial):
+        super().__init__()
         self.serial = serial
         self.signals = AdbSignals()
+        
+    def run(self):
+        try:
+            subprocess.run(["adb", "-s", self.serial, "reverse", "--remove", "tcp:8765"], capture_output=True, timeout=3)
+            self.signals.reverse_verified.emit(self.serial, True, "removed")
+        except Exception as e:
+            self.signals.reverse_verified.emit(self.serial, False, str(e))
         
     def run(self):
         pkg = "com.aistudio.sensornode.vlsnxz"
@@ -162,7 +186,8 @@ class InstrumentsWorkspace(QWidget):
         self.discovery = InstrumentDiscoveryService(port=8765)
         self.store = JsonlMeasurementStore()
         
-        self.current_state = "DISCONNECTED" # DISCONNECTED, CONNECTED, RECORDING
+        self.instrument_state = "DISCONNECTED"
+        self.session_state = "IDLE"
         self.current_instrument = None
         self.current_session = None
         
@@ -185,9 +210,12 @@ class InstrumentsWorkspace(QWidget):
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(6)
         
         # Header
         header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
         lbl_title = QLabel("INSTRUMENTS")
         lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #8b9bb4;")
         header.addWidget(lbl_title)
@@ -197,61 +225,55 @@ class InstrumentsWorkspace(QWidget):
         header.addWidget(self.lbl_status)
         main_layout.addLayout(header)
         
+        
         splitter = QSplitter(Qt.Horizontal)
         
         # Left Panel (Devices)
-        self.panel_left = QWidget()
-        left_layout = QVBoxLayout(self.panel_left)
-        
+        self.panel_left = QScrollArea()
+        self.panel_left.setWidgetResizable(True)
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(4, 4, 4, 4)
+        left_layout.setSpacing(4)
+
         self.group_devices = QGroupBox("DEVICES")
         devices_layout = QVBoxLayout(self.group_devices)
         
+        self.tabs = QTabWidget()
+        self.tab_conn = QWidget()
+        self.tab_ctrl = QWidget()
+        self.tabs.addTab(self.tab_conn, "Connection")
+        self.tabs.addTab(self.tab_ctrl, "Controls")
+        
+        # --- CONNECTION TAB ---
+        conn_layout = QVBoxLayout(self.tab_conn)
+        
         self.lbl_gateway_info = QLabel("Gateway Disabled")
         self.lbl_gateway_info.setStyleSheet("font-family: monospace; color: #94a3b8;")
-        devices_layout.addWidget(self.lbl_gateway_info)
+        conn_layout.addWidget(self.lbl_gateway_info)
         
-        # Separator line
+        self.btn_gateway = QPushButton("Enable Instrument Gateway")
+        self.btn_gateway.clicked.connect(self._toggle_gateway)
+        conn_layout.addWidget(self.btn_gateway)
+        
         line1 = QFrame()
         line1.setFrameShape(QFrame.HLine)
         line1.setFrameShadow(QFrame.Sunken)
         line1.setStyleSheet("background-color: #334155; margin: 10px 0;")
-        devices_layout.addWidget(line1)
+        conn_layout.addWidget(line1)
         
         self.lbl_device_info = QLabel("No Instrument Connected")
-        devices_layout.addWidget(self.lbl_device_info)
+        conn_layout.addWidget(self.lbl_device_info)
         
-        # Selector
-        self.combo_sensor = QComboBox()
-        self.combo_sensor.addItem("No data received")
-        self.combo_sensor.currentTextChanged.connect(self._on_sensor_selected)
-        devices_layout.addWidget(QLabel("Live Sensor:"))
-        devices_layout.addWidget(self.combo_sensor)
+        self.lbl_diagnostics = QLabel("Diagnostics:\n-")
+        self.lbl_diagnostics.setStyleSheet("font-family: monospace; color: #64748b; font-size: 10px;")
+        conn_layout.addWidget(self.lbl_diagnostics)
         
-        self.lbl_values = QLabel()
-        self.lbl_values.setStyleSheet("font-family: monospace;")
-        devices_layout.addWidget(self.lbl_values)
-        
-        # Camera Selector
-        self.combo_camera = QComboBox()
-        self.combo_camera.addItem("No camera data")
-        self.combo_camera.currentTextChanged.connect(self._on_camera_selected)
-        devices_layout.addWidget(QLabel("Live Camera:"))
-        devices_layout.addWidget(self.combo_camera)
-        
-        # Diagnostics
         line2 = QFrame()
         line2.setFrameShape(QFrame.HLine)
         line2.setFrameShadow(QFrame.Sunken)
         line2.setStyleSheet("background-color: #334155; margin: 10px 0;")
-        devices_layout.addWidget(line2)
-        
-        self.lbl_diagnostics = QLabel("Diagnostics:\n-")
-        self.lbl_diagnostics.setStyleSheet("font-family: monospace; color: #64748b; font-size: 10px;")
-        devices_layout.addWidget(self.lbl_diagnostics)
-        
-        self.btn_gateway = QPushButton("Enable Instrument Gateway")
-        self.btn_gateway.clicked.connect(self._toggle_gateway)
-        devices_layout.addWidget(self.btn_gateway)
+        conn_layout.addWidget(line2)
         
         self.btn_adb_discover = QPushButton("Discover USB Devices")
         self.btn_adb_discover.clicked.connect(self._discover_adb_devices)
@@ -259,7 +281,7 @@ class InstrumentsWorkspace(QWidget):
             self.btn_adb_discover.setEnabled(False)
             self.btn_adb_discover.setText("Discover USB Devices (ADB MISSING)")
             self.btn_adb_discover.setToolTip("Install Android Platform Tools or add adb to PATH.")
-        devices_layout.addWidget(self.btn_adb_discover)
+        conn_layout.addWidget(self.btn_adb_discover)
         
         adb_row = QHBoxLayout()
         self.combo_adb_devices = QComboBox()
@@ -269,57 +291,107 @@ class InstrumentsWorkspace(QWidget):
         self.btn_adb_connect.clicked.connect(self._on_adb_connect_clicked)
         adb_row.addWidget(self.combo_adb_devices)
         adb_row.addWidget(self.btn_adb_connect)
-        devices_layout.addLayout(adb_row)
+        conn_layout.addLayout(adb_row)
         
         self.btn_adb_disconnect = QPushButton("Disconnect USB Transport")
         self.btn_adb_disconnect.clicked.connect(self._on_adb_disconnect_clicked)
         self.btn_adb_disconnect.setEnabled(False)
-        devices_layout.addWidget(self.btn_adb_disconnect)
+        conn_layout.addWidget(self.btn_adb_disconnect)
         
         self.lbl_usb_dev_mode = QLabel("USB DEVELOPMENT MODE\nSensorNode endpoint:\nws://127.0.0.1:8765/sensors")
         self.lbl_usb_dev_mode.setStyleSheet("font-family: monospace; font-weight: bold; color: #a855f7;")
         self.lbl_usb_dev_mode.hide()
-        devices_layout.addWidget(self.lbl_usb_dev_mode)
+        conn_layout.addWidget(self.lbl_usb_dev_mode)
         
         self.lbl_adb_diagnostics = QLabel("ADB:\n-")
         self.lbl_adb_diagnostics.setStyleSheet("font-family: monospace; color: #94a3b8; font-size: 10px;")
-        devices_layout.addWidget(self.lbl_adb_diagnostics)
+        conn_layout.addWidget(self.lbl_adb_diagnostics)
+        
+        conn_layout.addStretch()
+        
+        # --- CONTROLS TAB ---
+        ctrl_layout = QVBoxLayout(self.tab_ctrl)
+        
+        self.combo_sensor = QComboBox()
+        self.combo_sensor.addItem("No data received")
+        self.combo_sensor.currentTextChanged.connect(self._on_sensor_selected)
+        ctrl_layout.addWidget(QLabel("Live Sensor:"))
+        ctrl_layout.addWidget(self.combo_sensor)
+        
+        self.lbl_values = QLabel()
+        self.lbl_values.setStyleSheet("font-family: monospace;")
+        ctrl_layout.addWidget(self.lbl_values)
+        
+        line3 = QFrame()
+        line3.setFrameShape(QFrame.HLine)
+        line3.setFrameShadow(QFrame.Sunken)
+        line3.setStyleSheet("background-color: #334155; margin: 10px 0;")
+        ctrl_layout.addWidget(line3)
+        
+        self.combo_camera = QComboBox()
+        self.combo_camera.addItem("No camera data")
+        self.combo_camera.currentTextChanged.connect(self._on_camera_selected)
+        ctrl_layout.addWidget(QLabel("Live Camera:"))
+        ctrl_layout.addWidget(self.combo_camera)
+        
+        line4 = QFrame()
+        line4.setFrameShape(QFrame.HLine)
+        line4.setFrameShadow(QFrame.Sunken)
+        line4.setStyleSheet("background-color: #334155; margin: 10px 0;")
+        ctrl_layout.addWidget(line4)
         
         self.btn_session = QPushButton("START SESSION")
         self.btn_session.setObjectName("primary")
         self.btn_session.clicked.connect(self._toggle_session)
         self.btn_session.setEnabled(False)
-        devices_layout.addWidget(self.btn_session)
+        ctrl_layout.addWidget(self.btn_session)
         
-        # Mode Selector
         self.combo_mode = QComboBox()
         self.combo_mode.addItem("CAMERA")
         self.combo_mode.addItem("MICROSCOPE")
         self.combo_mode.currentTextChanged.connect(self._on_mode_changed)
-        devices_layout.addWidget(QLabel("Acquisition Mode:"))
-        devices_layout.addWidget(self.combo_mode)
+        ctrl_layout.addWidget(QLabel("Acquisition Mode:"))
+        ctrl_layout.addWidget(self.combo_mode)
         
         self.btn_capture = QPushButton("CAPTURE SCIENTIFIC FRAME")
         self.btn_capture.setEnabled(False)
         self.btn_capture.clicked.connect(self._trigger_scientific_capture)
-        devices_layout.addWidget(self.btn_capture)
+        ctrl_layout.addWidget(self.btn_capture)
         
-        devices_layout.addStretch()
+        ctrl_layout.addStretch()
+        
+        devices_layout.addWidget(self.tabs)
         left_layout.addWidget(self.group_devices)
+        self.panel_left.setWidget(left_widget)
         splitter.addWidget(self.panel_left)
         
         # Right Panel (Trace / Microscope)
-        self.panel_right = QWidget()
-        right_layout = QVBoxLayout(self.panel_right)
+        self.panel_right = QScrollArea()
+        self.panel_right.setWidgetResizable(True)
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(4, 4, 4, 4)
+        right_layout.setSpacing(4)
         
         self.stack_right = QStackedWidget()
         
         # Mode 1: Trace View
         self.trace_view = QWidget()
         trace_layout = QVBoxLayout(self.trace_view)
+        trace_layout.setContentsMargins(0, 0, 0, 0)
+        trace_layout.setSpacing(4)
         
-        self.group_trace = QGroupBox("LIVE TRACE")
+        self.group_trace = QGroupBox("PREVIEW")
         trace_inner_layout = QVBoxLayout(self.group_trace)
+        
+        self.right_tabs = QTabWidget()
+        self.tab_sensors = QWidget()
+        self.tab_camera = QWidget()
+        self.right_tabs.addTab(self.tab_sensors, "Sensors")
+        self.right_tabs.addTab(self.tab_camera, "Camera")
+        
+        # Sensors Tab
+        sensors_layout = QVBoxLayout(self.tab_sensors)
         
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground('#0f172a')
@@ -329,23 +401,26 @@ class InstrumentsWorkspace(QWidget):
         self.curve_v2 = self.plot_widget.plot(pen=pg.mkPen('g', width=2), name="Y")
         self.curve_v3 = self.plot_widget.plot(pen=pg.mkPen('b', width=2), name="Z")
         self.curve_mag = self.plot_widget.plot(pen=pg.mkPen('w', width=2, style=Qt.DashLine), name="Mag")
+        sensors_layout.addWidget(self.plot_widget)
         
-        trace_inner_layout.addWidget(self.plot_widget)
+        self.lbl_session_status = QLabel("Preview Mode")
+        self.lbl_session_status.setStyleSheet("color: #94a3b8; font-family: monospace;")
+        sensors_layout.addWidget(self.lbl_session_status)
+        
+        # Camera Tab
+        camera_layout = QVBoxLayout(self.tab_camera)
         
         self.lbl_camera_view = QLabel("No Camera Feed")
         self.lbl_camera_view.setAlignment(Qt.AlignCenter)
         self.lbl_camera_view.setStyleSheet("background-color: #000; color: #64748b; font-family: monospace;")
         self.lbl_camera_view.setMinimumHeight(300)
-        trace_inner_layout.addWidget(self.lbl_camera_view)
+        camera_layout.addWidget(self.lbl_camera_view)
         
         self.lbl_camera_stats = QLabel("")
         self.lbl_camera_stats.setStyleSheet("font-family: monospace; color: #94a3b8;")
-        trace_inner_layout.addWidget(self.lbl_camera_stats)
+        camera_layout.addWidget(self.lbl_camera_stats)
         
-        self.lbl_session_status = QLabel("Preview Mode")
-        self.lbl_session_status.setStyleSheet("color: #94a3b8; font-family: monospace;")
-        trace_inner_layout.addWidget(self.lbl_session_status)
-        
+        trace_inner_layout.addWidget(self.right_tabs)
         trace_layout.addWidget(self.group_trace)
         self.stack_right.addWidget(self.trace_view)
         
@@ -354,10 +429,11 @@ class InstrumentsWorkspace(QWidget):
         self.stack_right.addWidget(self.optical_panel)
         
         right_layout.addWidget(self.stack_right)
+        self.panel_right.setWidget(right_widget)
         splitter.addWidget(self.panel_right)
         
         splitter.setSizes([350, 650])
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(splitter, 1)  # stretch=1: splitter takes all remaining height
         
         # Display Timer for 15 Hz redraw
         self.display_timer = QTimer(self)
@@ -391,7 +467,7 @@ class InstrumentsWorkspace(QWidget):
             return
             
         # Only interrupt if the recording's required channel is lost
-        if channel_type == "SENSORS" and self.current_state in ("RECORDING", "FINALIZING_INTERRUPTED"):
+        if channel_type == "SENSORS" and self.session_state in ("RECORDING", "FINALIZING_INTERRUPTED"):
             if self.current_instrument == device_id:
                 self._stop_session(reason="TRANSPORT_LOST")
                 
@@ -428,9 +504,9 @@ class InstrumentsWorkspace(QWidget):
             pass
 
     def _toggle_gateway(self):
-        if self.current_state == "DISCONNECTED":
+        if self.instrument_state == "DISCONNECTED":
             if self.gateway.start():
-                self.current_state = "LISTENING"
+                self.instrument_state = "LISTENING"
                 self.btn_gateway.setText("Disable Instrument Gateway")
                 self.lbl_status.setText("● LISTENING ON 8765")
                 self.lbl_status.setStyleSheet("font-weight: bold; color: #f59e0b;")
@@ -571,20 +647,24 @@ class InstrumentsWorkspace(QWidget):
         self.btn_adb_disconnect.setEnabled(False)
         self.lbl_usb_dev_mode.hide()
         
-        # Remove reverse mapping
-        try:
-            subprocess.run(["adb", "-s", serial, "reverse", "--remove", "tcp:8765"], capture_output=True, timeout=3)
+        runner = AdbDisconnectRunner(serial)
+        runner.signals.reverse_verified.connect(self._on_adb_disconnect_completed)
+        self.thread_pool.start(runner)
+
+    def _on_adb_disconnect_completed(self, serial, success, msg):
+        if success:
             self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nMapping removed.")
             self.btn_adb_connect.setText("Connect & Launch")
             self.btn_adb_connect.setEnabled(True)
-        except Exception as e:
-            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nFailed to remove mapping: {e}")
+        else:
+            self.lbl_adb_diagnostics.setText(f"ADB:\n{serial}\nFailed to remove mapping: {msg}")
 
     def _set_disconnected_state(self):
         if self.current_session:
             self._stop_session(reason="TRANSPORT_LOST")
             
-        self.current_state = "DISCONNECTED"
+        self.instrument_state = "DISCONNECTED"
+        self.session_state = "IDLE"
         self.current_instrument = None
         self.lbl_status.setText("● DISCONNECTED")
         self.lbl_status.setStyleSheet("font-weight: bold; color: #ef4444;")
@@ -672,7 +752,7 @@ class InstrumentsWorkspace(QWidget):
         if len(stream.packet_timestamps) > 1000:
             stream.packet_timestamps.pop(0)
             
-        if self.current_state == "RECORDING":
+        if self.session_state == "RECORDING":
             self.store.append(measurement)
             
         if len(stream.ring_buffer_time) > self.max_display_samples:
@@ -827,17 +907,17 @@ class InstrumentsWorkspace(QWidget):
                 
             can_start = (
                 self.current_instrument is not None
-                and self.current_state != "RECORDING"
+                and self.session_state != "RECORDING"
                 and dev.sensors
                 and dev.sensors.state.value in ("CONNECTED", "STREAMING")
             )
-            self.btn_session.setEnabled(can_start or self.current_state == "RECORDING")
+            self.btn_session.setEnabled(can_start or self.session_state == "RECORDING")
             
             if can_start and self.btn_adb_connect.text() == "WAITING_FOR_PROTOCOL":
                 self.btn_adb_connect.setText("CONNECTED")
             
             overall = dev.overall_state().value
-            self.current_state = overall
+            self.instrument_state = overall
             self.lbl_device_info.setText(f"<b>{dev.device_id}</b><br/>UNVERIFIED DEVICE IDENTITY")
             
             if overall == "DISCONNECTED":
@@ -976,7 +1056,7 @@ class InstrumentsWorkspace(QWidget):
                 
                 self.lbl_values.setText(val_text)
                 
-        if self.current_state == "RECORDING":
+        if self.session_state == "RECORDING":
             sess_txt = f"SESSION {self.current_session}\nRECORDING\n\n"
             for mt, st in self.streams.items():
                 hz = st.calculate_rate()
@@ -991,14 +1071,14 @@ class InstrumentsWorkspace(QWidget):
         dev = self.gateway.registry.devices.get(self.current_instrument)
         can_start_session = (
             dev is not None
-            and self.current_state != "RECORDING"
+            and self.session_state != "RECORDING"
             and dev.sensors
             and dev.sensors.state.value in ("CONNECTED", "STREAMING")
         )
         
         if can_start_session:
             self._start_session()
-        elif self.current_state == "RECORDING":
+        elif self.session_state == "RECORDING":
             self._stop_session()
 
     def _start_session(self):
@@ -1012,7 +1092,7 @@ class InstrumentsWorkspace(QWidget):
         }
         
         self.store.begin(self.current_session, self.current_instrument, metadata)
-        self.current_state = "RECORDING"
+        self.session_state = "RECORDING"
         self.btn_session.setText("STOP SESSION")
         self.lbl_session_status.setStyleSheet("color: #ef4444; font-weight: bold; font-family: monospace;")
         
@@ -1028,13 +1108,13 @@ class InstrumentsWorkspace(QWidget):
                 pass
 
     def _stop_session(self, reason=None):
-        if self.current_state not in ("RECORDING", "FINALIZING_INTERRUPTED"):
+        if self.session_state not in ("RECORDING", "FINALIZING_INTERRUPTED"):
             return
             
-        if self.current_state == "FINALIZING_INTERRUPTED":
+        if self.session_state == "FINALIZING_INTERRUPTED":
             return
             
-        self.current_state = "FINALIZING_INTERRUPTED"
+        self.session_state = "FINALIZING_INTERRUPTED"
         
         self.gateway.set_active_session("PREVIEW")
         self.btn_session.setText("START SESSION")
@@ -1052,7 +1132,7 @@ class InstrumentsWorkspace(QWidget):
                     )
                 except Exception:
                     pass
-            self.current_state = "INTERRUPTED"
+            self.session_state = "INTERRUPTED"
         else:
             total_dropped = {mt: st.total_dropped for mt, st in self.streams.items()}
             rejected = self.gateway.decoder.total_rejected
@@ -1067,7 +1147,23 @@ class InstrumentsWorkspace(QWidget):
                     )
                 except Exception:
                     pass
-            self.current_state = "PREVIEW"
+            self.session_state = "COMMITTED"
+            
+            from virtual_lab.domain.assemblers import session_commit_to_observation
+            from virtual_lab.domain.experiment_store import ExperimentStore
+            
+            active_exp = self.workspace.active_experiment
+            exp_id_for_obs = active_exp.id if active_exp else ""
+            obs = session_commit_to_observation(commit_result, exp_id_for_obs)
+            
+            db = ExperimentStore()
+            if active_exp:
+                active_exp.attach_observation(obs)
+                db.save_observation(obs)
+                self.workspace.observationCommitted.emit(obs)
+            else:
+                db.stage_observation(obs)
+                self.workspace.observationStaged.emit(obs)
             
         self.current_session = None
         self._update_ui()
@@ -1085,9 +1181,15 @@ class InstrumentsWorkspace(QWidget):
         self.btn_capture.setEnabled(False)
         
         msg = {
-            "message_type": "CONTROL_REQUEST",
+            "message_type": "SCIENTIFIC_CAPTURE_REQUEST",
+            "schema_version": "1",
             "request_id": req_id,
-            "control_type": "CAPTURE_SCIENTIFIC_FRAME",
-            "requested": None
+            "device_id": self.current_instrument,
+            "camera_stream_key": {
+                "camera_id": self.selected_camera_key.camera_id if self.selected_camera_key else "0",
+                "logical_camera_id": self.selected_camera_key.logical_camera_id if self.selected_camera_key else None,
+                "physical_camera_id": self.selected_camera_key.physical_camera_id if self.selected_camera_key else None
+            },
+            "parameters": {}
         }
         self.gateway.send_control_message(msg)

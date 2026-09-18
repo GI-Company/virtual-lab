@@ -11,12 +11,15 @@ class WorkspaceState(QObject):
     resultChanged = Signal(object)
     evidenceSelectionChanged = Signal(object)
     contextChanged = Signal(str)
+    
+    observationCommitted = Signal(object) # ExperimentObservation
+    observationStaged = Signal(object)    # ExperimentObservation
 
     def __init__(self):
         super().__init__()
 
         self._active_project_id: Optional[str] = None
-        self._active_experiment_id: Optional[str] = None
+        self._active_experiment = None # VirtualExperiment
         self._active_branch_id: Optional[str] = None
 
         self._selected_object: ScientificSelection = ScientificSelection(kind=SelectionKind.NONE)
@@ -59,11 +62,11 @@ class WorkspaceState(QObject):
         self.resultChanged.emit(value)
         
     @property
-    def active_experiment_id(self) -> Optional[str]:
-        return self._active_experiment_id
+    def active_experiment(self):
+        return self._active_experiment
         
-    @active_experiment_id.setter
-    def active_experiment_id(self, value: Optional[str]):
-        if self._active_experiment_id != value:
-            self._active_experiment_id = value
-            self.activeExperimentChanged.emit(value)
+    @active_experiment.setter
+    def active_experiment(self, value):
+        if self._active_experiment != value:
+            self._active_experiment = value
+            self.activeExperimentChanged.emit(value.id if value else None)

@@ -65,6 +65,22 @@ class ExperimentController(QObject):
         from virtual_lab.gui.services.simulation_result import SimulationResult
         sim_result = SimulationResult.from_dict(result)
         
+        from virtual_lab.domain.assemblers import simulation_result_to_observation
+        from virtual_lab.domain.experiment_store import ExperimentStore
+        
+        active_exp = self.workspace.active_experiment
+        exp_id_for_obs = active_exp.id if active_exp else ""
+        obs = simulation_result_to_observation(result, exp_id_for_obs)
+        
+        db = ExperimentStore()
+        if active_exp:
+            active_exp.attach_observation(obs)
+            db.save_observation(obs)
+            self.workspace.observationCommitted.emit(obs)
+        else:
+            db.stage_observation(obs)
+            self.workspace.observationStaged.emit(obs)
+        
         self.workspace.current_result=sim_result
         self.runFinished.emit(sim_result)
     @Slot(str)

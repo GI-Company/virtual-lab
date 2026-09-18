@@ -55,9 +55,9 @@ class GeminiProvider:
         full_prompt = f"Scientific Context: {context}\n\nResearcher Prompt: {prompt}"
         
         try:
-            # We use gemini-3.6-pro for complex structured reasoning with grounding
+            # Use gemini-3.1-pro-preview for complex structured reasoning with grounding
             response = self.client.models.generate_content(
-                model='gemini-3.6-pro',
+                model='gemini-3.1-pro-preview',
                 contents=full_prompt,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system_instruction,

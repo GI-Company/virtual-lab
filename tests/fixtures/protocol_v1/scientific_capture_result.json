@@ -1,0 +1,9 @@
+{
+  "message_type": "SCIENTIFIC_CAPTURE_RESULT",
+  "schema_version": "1",
+  "request_id": "REQ-2",
+  "device_id": "DEV-123",
+  "status": "COMPLETED",
+  "device_timestamp_ns": 3000000000,
+  "error_message": null
+}

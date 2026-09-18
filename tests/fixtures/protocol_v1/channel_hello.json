@@ -1,0 +1,6 @@
+{
+  "message_type": "CHANNEL_HELLO",
+  "schema_version": "1",
+  "device_id": "DEV-123",
+  "channel": "sensors"
+}
