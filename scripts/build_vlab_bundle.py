@@ -17,20 +17,25 @@ def build_vlab_bundle(experiment_dir: str, output_path: str):
         print("Warning: No genesis.db found in experiment directory.")
         
     with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as bundle:
-        # Add core ledger
-        if os.path.exists(genesis_path):
-            bundle.write(genesis_path, "genesis.db")
-            
-        # Add any raw data or parameters found in the directory
         manifest = {
             "vlab_version": "1.0",
             "build_utc": datetime.now(timezone.utc).isoformat(),
             "contents": []
         }
-        
-        for root, _, files in os.walk(experiment_dir):
+        # Write genesis.db and its hash
+        if os.path.exists(genesis_path):
+            bundle.write(genesis_path, "genesis.db")
+            with open(genesis_path, 'rb') as f:
+                genesis_hash = hashlib.sha256(f.read()).hexdigest()
+            manifest["contents"].append({
+                "path": "genesis.db",
+                "sha256": genesis_hash
+            })
+            
+        for root, dirs, files in os.walk(experiment_dir):
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('build', '__pycache__')]
             for file in files:
-                if file == "genesis.db":
+                if file == "genesis.db" or file.startswith('.'):
                     continue
                 file_path = os.path.join(root, file)
                 rel_path = os.path.relpath(file_path, experiment_dir)
@@ -45,8 +50,20 @@ def build_vlab_bundle(experiment_dir: str, output_path: str):
                 bundle.write(file_path, rel_path)
                 
         # Write manifest
-        manifest_bytes = json.dumps(manifest, indent=2).encode('utf-8')
+        from virtual_lab.core.canonical import canonical_json
+        import nacl.signing
+        import binascii
+        
+        # Use a real Ed25519 publisher key for the PoC
+        VLAB_PUBLISHER_SK = os.environ.get("VLAB_PUBLISHER_SK", "78295015b6748f63b2d0c9822e82842e650b1404649c0556dfefd6b84ed3abfc")
+        signing_key = nacl.signing.SigningKey(binascii.unhexlify(VLAB_PUBLISHER_SK))
+        
+        manifest_bytes = canonical_json(manifest)
         bundle.writestr("manifest.json", manifest_bytes)
+        
+        # Create detached signature
+        signature = signing_key.sign(manifest_bytes).signature
+        bundle.writestr("manifest.sig", signature)
         
     print(f"Successfully built .vlab bundle at {output_path}")
 

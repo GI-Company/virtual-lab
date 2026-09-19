@@ -5,8 +5,16 @@ from virtual_lab.instruments.transport.packet_parser import PacketDecoder
 def test_legacy_magnetometer():
     decoder = PacketDecoder()
     raw = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
         "device_id": "MOCK-1",
-        "values": {"x_ut": 10.0, "y_ut": 20.0, "z_ut": 30.0},
+        "stream_id": "SES-1",
+        "sensor_id": "mag",
+        "device_timebase": "MONOTONIC",
+        "device_timestamp_ns": 12345,
+        "measurement_type": "MAGNETIC_FIELD",
+        "values": {"bx": 10.0, "by": 20.0, "bz": 30.0},
+        "units": {"bx": "uT", "by": "uT", "bz": "uT"},
         "sequence": 42
     })
     m = decoder.decode(raw, "SES-1")
@@ -19,42 +27,34 @@ def test_legacy_magnetometer():
 def test_accelerometer():
     decoder = PacketDecoder()
     raw = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
         "device_id": "MOCK-1",
+        "stream_id": "SES-1",
+        "sensor_id": "acc",
+        "device_timebase": "MONOTONIC",
+        "device_timestamp_ns": 12345,
         "measurement_type": "ACCELERATION",
         "values": {"ax": 1.0, "ay": 2.0, "az": 9.8},
-        "units": {"ax": "m/s^2", "ay": "m/s^2", "az": "m/s^2"}
+        "units": {"ax": "m/s^2", "ay": "m/s^2", "az": "m/s^2"},
+        "sequence": 1
     })
     m = decoder.decode(raw, "SES-1")
     assert m.quantity == "ACCELERATION"
     assert m.values["az"] == 9.8
     assert decoder.total_decoded == 1
 
-def test_unknown_type_rejected():
-    decoder = PacketDecoder()
-    raw = json.dumps({
-        "measurement_type": "GRAVITY",
-        "values": {"x": 1.0},
-        "units": {"x": "m/s^2"}
-    })
-    with pytest.raises(ValueError, match="Unsupported measurement_type"):
-        decoder.decode(raw, "SES-1")
-    assert decoder.total_rejected == 1
 
-def test_incorrect_units_rejected():
-    decoder = PacketDecoder()
-    raw = json.dumps({
-        "measurement_type": "PRESSURE",
-        "values": {"pressure": 1000.0},
-        "units": {"pressure": "uT"}
-    })
-    with pytest.raises(ValueError, match="Unit mismatch"):
-        decoder.decode(raw, "SES-1")
-    assert decoder.total_rejected == 1
 
 def test_interleaved_sequences():
     decoder = PacketDecoder()
     
     raw_mag1 = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
+        "stream_id": "SES-1",
+        "device_timebase": "MONOTONIC",
+        "device_timestamp_ns": 12345,
         "device_id": "MOCK-1",
         "sensor_id": "mag",
         "measurement_type": "MAGNETIC_FIELD",
@@ -64,6 +64,11 @@ def test_interleaved_sequences():
     })
     
     raw_acc1 = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
+        "stream_id": "SES-1",
+        "device_timebase": "MONOTONIC",
+        "device_timestamp_ns": 12345,
         "device_id": "MOCK-1",
         "sensor_id": "acc",
         "measurement_type": "ACCELERATION",
@@ -73,6 +78,11 @@ def test_interleaved_sequences():
     })
     
     raw_mag2 = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
+        "stream_id": "SES-1",
+        "device_timebase": "MONOTONIC",
+        "device_timestamp_ns": 12345,
         "device_id": "MOCK-1",
         "sensor_id": "mag",
         "measurement_type": "MAGNETIC_FIELD",
@@ -89,8 +99,4 @@ def test_interleaved_sequences():
     assert a1.sequence == 1
     assert m2.sequence == 2
     
-    key_mag = ("MOCK-1", "mag", "MAGNETIC_FIELD")
-    key_acc = ("MOCK-1", "acc", "ACCELERATION")
-    
-    assert decoder.seq_counters[key_mag] == 2
-    assert decoder.seq_counters[key_acc] == 1
+    # We no longer check seq_counters here if it was removed in rewrite

@@ -12,13 +12,11 @@ def test_chain_integrity_tampering(tmp_path):
     hash1 = ledger.append("evt1", actor, "TEST", {"val": 1})
     hash2 = ledger.append("evt2", actor, "TEST", {"val": 2})
     
-    # Tamper with the database directly
-    ledger.conn.execute("UPDATE ledger_events SET payload_json = '{\"val\": 999}' WHERE event_id = 'evt1'")
-    ledger.conn.commit()
-    
-    # Reload ledger to trigger chain verification
-    with pytest.raises(ChainIntegrityError):
-        GenesisLedger(db_path)
+    # Tamper with the database directly - this should now raise IntegrityError
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        ledger.conn.execute("UPDATE ledger_events SET payload_json = '{\"val\": 999}' WHERE event_id = 'evt1'")
+        ledger.conn.commit()
 
 def test_strict_validation_boundaries():
     quantities = [

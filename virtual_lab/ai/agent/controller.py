@@ -83,14 +83,11 @@ class AgentController:
         
         while episode.step_count < self.max_agent_steps:
             if not self.model_backend:
-                # If no model backend, we just simulate answering based on the tools in authoritative_records
-                # This is useful for deterministic testing
-                termination_reason = AgentTerminationReason.ANSWER_COMPLETE
-                break
+                raise ValueError("Model backend is structurally required in Operational PoC v0.1")
                 
-            # Invoke Model (mocked or real)
+            # Invoke Model
             try:
-                model_output = self.model_backend(context_data, dag.serialize(), stream_callback=stream_callback)
+                model_output = self.model_backend(context_data, episode.reasoning_dag.serialize(), stream_callback=stream_callback)
                 print(f"Agent Action: {json.dumps(model_output, indent=2)}")
             except Exception as e:
                 if "context overflow" in str(e).lower():
@@ -99,14 +96,13 @@ class AgentController:
                 elif "MODEL_OUTPUT_INVALID" in str(e):
                     print(f"DEBUG EXCEPTION: {str(e)}")
                     termination_reason = AgentTerminationReason.TOOL_FAILURE
-                    # In a real system, we'd log the failure or do bounded retry, but here we break
-                    self.genesis.record_episode_completed(episode_id, termination_reason, "INVALID_MODEL_OUTPUT")
+                    self.genesis.record_episode_completed(episode.episode_id, termination_reason, "INVALID_MODEL_OUTPUT")
                     return episode
                 else:
                     raise
             
             if model_output.get("type") == "answer":
-                dag.add_step(StepType.RESPONSE_GENERATED, [], [], experiment_id=experiment_id)
+                episode.reasoning_dag.add_step(StepType.RESPONSE_GENERATED, [], [], experiment_id=episode.experiment_id)
                 termination_reason = AgentTerminationReason.ANSWER_COMPLETE
                 episode.final_response_hash = hashlib.sha256(model_output.get("text", "").encode()).hexdigest()
                 break
@@ -118,6 +114,15 @@ class AgentController:
                     
                 tool_name = model_output.get("tool_name")
                 tool_args = model_output.get("args", {})
+                
+                # Capability Enforcement: L1 Authority is Deny-by-default for mutations
+                # All PROPOSE and ACTION tools are structurally absent/denied from L1
+                tool_schema = self.registry.get_tool(tool_name)
+                from virtual_lab.ai.agent.types import ToolActionType
+                if tool_schema.action_type in [ToolActionType.PROPOSE, ToolActionType.ACTION]:
+                    termination_reason = AgentTerminationReason.TOOL_FAILURE
+                    self.genesis.record_tool_failed(episode.episode_id, f"req_{uuid.uuid4().hex[:8]}", f"L1_CAPABILITY_DENIED: {tool_schema.action_type.name} is structurally absent from L1")
+                    break
                 
                 # Enforce HVIEW limits
                 if tool_name == "envision_memory":
@@ -135,7 +140,7 @@ class AgentController:
                 episode.last_tool_call = current_call
                 
                 # Pre-execution DAG logging
-                req_step = dag.add_step(StepType.TOOL_REQUEST, [], [], tool_name=tool_name, experiment_id=episode.experiment_id)
+                req_step = episode.reasoning_dag.add_step(StepType.TOOL_REQUEST, [], [], tool_name=tool_name, experiment_id=episode.experiment_id)
                 args_hash = hashlib.sha256(json.dumps(tool_args, sort_keys=True).encode()).hexdigest()
                 self.genesis.record_tool_requested(episode.episode_id, req_step.step_id, tool_name, args_hash)
                 
@@ -146,8 +151,18 @@ class AgentController:
                     if isinstance(result, dict) and result.get("status") == "PENDING":
                         # Proposal created
                         termination_reason = AgentTerminationReason.USER_APPROVAL_REQUIRED
-                        episode.proposals.append(self._mock_fetch_proposal(result["proposal_id"]))
-                        dag.add_step(
+                        
+                        # In the real system, we'd fetch the actual proposal from the ledger.
+                        # For now, we construct the immutable proposal reference based on the tool result.
+                        proposal_id = result["proposal_id"]
+                        
+                        from virtual_lab.ai.agent.types import Proposal
+                        from datetime import datetime, timezone
+                        
+                        p = Proposal(proposal_id, tool_name, tool_args, tool_args.get("evidence_refs", []), tool_args.get("hview_id"), "gemma4_unified", datetime.now(timezone.utc).isoformat())
+                        episode.proposals.append(p)
+                        
+                        episode.reasoning_dag.add_step(
                             StepType.SIMULATION_PROPOSED if "simulation" in tool_name else StepType.HYPOTHESIS_PROPOSED,
                             [req_step.step_id], [], tool_name=tool_name, experiment_id=episode.experiment_id
                         )
@@ -158,7 +173,7 @@ class AgentController:
                     
                     # Update context with result
                     episode.tool_results.append({"tool": tool_name, "result": result})
-                    dag.add_step(StepType.TOOL_RESULT, [req_step.step_id], [], tool_name=tool_name, experiment_id=episode.experiment_id)
+                    episode.reasoning_dag.add_step(StepType.TOOL_RESULT, [req_step.step_id], [], tool_name=tool_name, experiment_id=episode.experiment_id)
                     tool_count += 1
                     
                 except ValueError as ve:
@@ -182,10 +197,5 @@ class AgentController:
         if episode.step_count >= self.max_agent_steps:
             termination_reason = AgentTerminationReason.STEP_LIMIT
             
-        self.genesis.record_episode_completed(episode.episode_id, termination_reason, episode.final_response_hash or "")
+        self.genesis.record_episode_completed(episode.episode_id, termination_reason, getattr(episode, 'final_response_hash', ""))
         return episode
-
-    def _mock_fetch_proposal(self, proposal_id: str):
-        from virtual_lab.ai.agent.types import Proposal
-        from datetime import datetime, timezone
-        return Proposal(proposal_id, "mock", {}, [], None, "gemma4", datetime.now(timezone.utc).isoformat())

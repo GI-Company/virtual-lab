@@ -54,7 +54,7 @@ class CameraStreamKey(BaseModel):
 
 class CameraFrameMetadata(BaseModel):
     message_type: Literal["CAMERA_PREVIEW_FRAME", "CAMERA_SCIENTIFIC_FRAME"] = "CAMERA_PREVIEW_FRAME"
-    schema_version: str = "1"
+    schema_version: Literal["1"] = "1"
     device_id: str
     stream_id: str
     camera_stream_key: CameraStreamKey
@@ -77,6 +77,13 @@ class CameraFrameMetadata(BaseModel):
     request_id: Optional[str] = None
     payload_size_bytes: int
     payload_sha256: Optional[str] = None
+
+    from pydantic import model_validator
+    @model_validator(mode='after')
+    def check_resolution(self):
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError(f"Invalid resolution: {self.width}x{self.height}")
+        return self
 
 class CameraControlRequest(BaseModel):
     message_type: Literal["CAMERA_CONTROL_REQUEST"] = "CAMERA_CONTROL_REQUEST"

@@ -8,6 +8,11 @@ import os
 import json
 import hashlib
 import importlib.util
+import binascii
+import nacl.signing
+from nacl.exceptions import BadSignatureError
+from virtual_lab.core.canonical import canonical_json
+from virtual_lab.core.trusted_signers import get_signer_status, TrustState
 
 class VLProgramError(Exception):
     pass
@@ -25,15 +30,26 @@ def load_vlprogram(program_dir: str) -> dict:
         manifest = json.load(f)
         
     # Verify signature
-    signature = manifest.pop("vlprogram_signature", None)
-    if not signature:
-        raise VLProgramError("No vlprogram_signature found in manifest")
-        
-    manifest_bytes = json.dumps(manifest, sort_keys=True).encode('utf-8')
-    computed_signature = hashlib.sha256(manifest_bytes).hexdigest()
+    signature_hex = manifest.pop("vlprogram_signature", None)
+    public_key_hex = manifest.pop("vlprogram_public_key", None)
     
-    if computed_signature != signature:
-        raise VLProgramError(f"Signature mismatch. Expected {signature}, got {computed_signature}")
+    if not signature_hex or not public_key_hex:
+        raise VLProgramError("No vlprogram_signature or vlprogram_public_key found in manifest")
+        
+    manifest_bytes = canonical_json(manifest)
+    manifest_hash = hashlib.sha256(manifest_bytes).digest()
+    
+    try:
+        verify_key = nacl.signing.VerifyKey(binascii.unhexlify(public_key_hex))
+        verify_key.verify(manifest_hash, binascii.unhexlify(signature_hex))
+    except BadSignatureError:
+        raise VLProgramError(f"Signature mismatch. Signature verification failed.")
+    except Exception as e:
+        raise VLProgramError(f"Invalid signature format: {e}")
+        
+    trust_state = get_signer_status(public_key_hex)
+    if trust_state != TrustState.TRUSTED:
+        raise VLProgramError(f"SIGNATURE_VALID, AUTHENTICITY_{trust_state.value}")
         
     # Verify artifacts
     for artifact_name, expected_hash in manifest.get("artifacts", {}).items():
@@ -46,7 +62,6 @@ def load_vlprogram(program_dir: str) -> dict:
             raise VLProgramError(f"Artifact {artifact_name} hash mismatch")
             
     # Dynamically load the module (for rho_system.py)
-    # The actual artifact name might be different, but for now we expect rho_system.py
     if "rho_system.py" in manifest.get("artifacts", {}):
         system_path = os.path.join(program_dir, "rho_system.py")
         spec = importlib.util.spec_from_file_location("rho_system", system_path)
@@ -54,5 +69,7 @@ def load_vlprogram(program_dir: str) -> dict:
         spec.loader.exec_module(module)
         manifest["module"] = module
     
-    manifest["vlprogram_signature"] = signature
+    manifest["vlprogram_signature"] = signature_hex
+    manifest["vlprogram_public_key"] = public_key_hex
     return manifest
+

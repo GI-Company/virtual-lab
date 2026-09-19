@@ -38,7 +38,10 @@ def create_virtual_lab_runtime(ledger_path: str = ".virtuallab/genesis.db") -> V
         import logging
         logging.getLogger("virtuallab.runtime").warning(f"GemmaBackend offline: {e}")
         
-    controller = AgentController(registry, policy, assembler, ledger, model_backend=backend)
+    from virtual_lab.ai.agent.genesis_adapter import AgentGenesisRecorder
+    agent_genesis = AgentGenesisRecorder(ledger)
+        
+    controller = AgentController(registry, policy, assembler, agent_genesis, model_backend=backend)
     
     return VirtualLabRuntime(
         ledger=ledger,

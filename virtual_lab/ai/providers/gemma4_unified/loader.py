@@ -47,7 +47,14 @@ class Gemma4UnifiedLoader:
         # 3. Generate Certificate
         certificate = self.generate_certificate(config, weight_map)
         
-        # 4. Initialize model
+        # 4. Load weights using MLX
+        # We need to gather all weights into one dict and apply them
+        all_weights = {}
+        for st_file in self.model_path.glob("*.safetensors"):
+            w = mx.load(str(st_file))
+            all_weights.update(w)
+
+        # 5. Initialize model
         model = Gemma4UnifiedModel(config)
         
         # Quantize if needed
@@ -59,23 +66,32 @@ class Gemma4UnifiedLoader:
             def quant_predicate(path, m):
                 if not hasattr(m, "to_quantized"):
                     return False
-                # Gemma4 models may have specific quant requirements
-                if hasattr(model.language_model, "quant_predicate"):
-                    # Check if it falls under language_model
-                    if path.startswith("language_model."):
-                        sub_path = path[len("language_model."):]
-                        return model.language_model.quant_predicate(sub_path, m)
-                return True
+                # Check if this specific layer was quantized in the checkpoint
+                if f"{path}.scales" in all_weights:
+                    if path in quant_config:
+                        return quant_config[path]
+                    return True
+                return False
                 
             nn.quantize(model, group_size, bits, class_predicate=quant_predicate)
-        
-        # 5. Load weights using MLX (MLX nn.Module loads from dict or npz)
-        # We need to gather all weights into one dict and apply them
-        all_weights = {}
-        for st_file in self.model_path.glob("*.safetensors"):
-            w = mx.load(str(st_file))
-            all_weights.update(w)
             
+        # Map community model 'vision_tower' to our 'vision_embedder' and drop unused layers
+        keys_to_delete = []
+        for k in list(all_weights.keys()):
+            if k == "vision_tower.patch_embedder.position_embedding_table":
+                all_weights["vision_embedder.pos_embedding"] = all_weights[k]
+                keys_to_delete.append(k)
+            elif k == "vision_tower.patch_embedder.input_proj.weight":
+                all_weights["vision_embedder.patch_dense.weight"] = all_weights[k]
+                keys_to_delete.append(k)
+            elif k.startswith("vision_tower."):
+                keys_to_delete.append(k)
+            elif k.startswith("audio_tower."):
+                keys_to_delete.append(k)
+                
+        for k in keys_to_delete:
+            del all_weights[k]
+
         # Optional: sanitize language_model weights if needed by mlx_lm
         if hasattr(model.language_model, "sanitize"):
             # extract language_model weights
@@ -88,17 +104,24 @@ class Gemma4UnifiedLoader:
             for k in old_keys:
                 del all_weights[k]
 
-        from mlx.utils import tree_unflatten
+        from mlx.utils import tree_unflatten, tree_flatten
         
+        # Filter all_weights to only include keys the model expects
+        model_keys = {k for k, v in tree_flatten(model.parameters())}
+        filtered_weights = {}
+        for k, v in all_weights.items():
+            if k in model_keys:
+                filtered_weights[k] = v
+                
         # Calculate checksum before assignment
         pos_emb_before = None
         if hasattr(model.vision_embedder, "pos_embedding"):
             pos_emb_before = float(mx.sum(mx.abs(model.vision_embedder.pos_embedding)).item())
             
         # Store checkpoint tensor for comparison
-        ckpt_pos_emb = all_weights.get("vision_embedder.pos_embedding", None)
+        ckpt_pos_emb = filtered_weights.get("vision_embedder.pos_embedding", None)
             
-        model.update(tree_unflatten(list(all_weights.items())))
+        model.update(tree_unflatten(list(filtered_weights.items())))
         mx.eval(model.parameters())
         
         # Calculate checksum after assignment

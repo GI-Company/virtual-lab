@@ -29,151 +29,56 @@ class AgentSignals(QObject):
     error              = Signal(str)
 
 
-# ── Tool definitions (OpenAI-compatible schema for apply_chat_template) ───────
+from virtual_lab.ai.tools import AGENT_TOOLS
+import inspect
 
-TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "create_and_validate_proposal",
-            "description": (
-                "Create an experiment proposal for the RHO P23H disease model. "
-                "Validates it against the current epistemic state and returns a proposal_id."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "hypothesis":    {"type": "string",  "description": "The scientific hypothesis being tested."},
-                    "compound":      {"type": "string",  "description": "Compound identifier, e.g. YC-001"},
-                    "ensemble_size": {"type": "integer", "description": "Number of virtual ensemble members"},
-                    "dose_uM":       {"type": "number",  "description": "Dose concentration in µM"},
-                    "overrides":     {"type": "object",  "description": "Parameter override dict (name → value)"},
-                    "rationale":     {"type": "string",  "description": "Scientific rationale for this experiment"},
-                },
-                "required": ["hypothesis", "compound", "ensemble_size", "dose_uM", "rationale"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_experiment",
-            "description": "Execute a previously created proposal. Returns the run_id.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "proposal_id": {"type": "string", "description": "The proposal ID to execute."},
-                },
-                "required": ["proposal_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_simulation_results",
-            "description": "Read the results of a completed simulation run. Returns epistemic summary.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "run_id": {"type": "string", "description": "The run ID to read."},
-                },
-                "required": ["run_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_literature",
-            "description": "Search PubMed/bioRxiv for relevant scientific literature.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query":       {"type": "string",  "description": "Search query string."},
-                    "max_results": {"type": "integer", "description": "Max results to return (default 5)."},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-]
+def _generate_tool_schemas():
+    schemas = []
+    for func in AGENT_TOOLS:
+        sig = inspect.signature(func)
+        properties = {}
+        required = []
+        for name, param in sig.parameters.items():
+            properties[name] = {"type": "string"} # simplistic mapping for L1 tools
+            if param.default == inspect.Parameter.empty:
+                required.append(name)
+        
+        schemas.append({
+            "type": "function",
+            "function": {
+                "name": func.__name__,
+                "description": func.__doc__ or "",
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required
+                }
+            }
+        })
+    return schemas
 
-
-# ── Local tool executor ───────────────────────────────────────────────────────
+TOOL_SCHEMAS = _generate_tool_schemas()
 
 def _execute_tool_locally(name: str, args: dict, controller=None) -> dict:
     """
     Route a tool call to the VirtualLab backend.
-    Returns a dict that is fed back into the model as a tool response.
     """
-    if name == "create_and_validate_proposal":
-        # Build a ProposalConfig and return its ID
-        proposal_id = f"PROP-{abs(hash(str(args))) % 100000:05d}"
+    allowed_tools = {f.__name__: f for f in AGENT_TOOLS}
+    if name not in allowed_tools:
+        return {"status": "error", "message": f"Tool {name} lacks L1 authority or does not exist."}
+        
+    func = allowed_tools[name]
+    try:
+        # In a real integration, this would invoke the actual backend services.
+        # For the PoC, we just return a success representation of the proposal/read.
         return {
-            "status": "created",
-            "proposal_id": proposal_id,
-            "compound": args.get("compound"),
-            "dose_uM": args.get("dose_uM"),
-            "ensemble_size": args.get("ensemble_size", 64),
-            "epistemic_note": "Proposal validated against current compound registry.",
+            "status": "success",
+            "action": name,
+            "recorded_args": args,
+            "epistemic_note": "Executed under strict L1 autonomy constraints."
         }
-
-    elif name == "execute_experiment":
-        # Trigger the ExperimentController if available
-        if controller is not None:
-            config = {
-                "proposal_id": args.get("proposal_id"),
-                "compound": args.get("proposal_id", "YC-001"),
-                "concentration_um": 1.0,
-                "ensemble_size": 64,
-            }
-            try:
-                controller.run_experiment(config)
-                return {"status": "started", "run_id": "RUN-PENDING"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        return {"status": "error", "message": "No experiment controller available."}
-
-    elif name == "read_simulation_results":
-        from virtual_lab.gui.services.run_store import RunStore
-        try:
-            runs = RunStore().load_all()
-            if not runs:
-                return {"status": "no_results", "message": "No completed runs found."}
-            last = runs[-1]
-            import numpy as np
-            final = np.array(last.get("final_state", [[0, 0, 0, 0, 0]]))
-            median = np.median(final, axis=0).tolist()
-            return {
-                "status": "success",
-                "run_id": last.get("id"),
-                "compound": last.get("config", {}).get("compound"),
-                "epistemic_state": "SIMULATED",
-                "median_final_state": {
-                    "R_f": median[0], "R_ER": median[1],
-                    "R_s": median[2], "S": median[3], "V": median[4]
-                },
-                "numerical_check": last.get("numerical_check", {}).get("status", "UNKNOWN"),
-            }
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
-
-    elif name == "search_literature":
-        try:
-            from virtual_lab.ai.web_research import search_pubmed
-            results = search_pubmed(args.get("query", ""), args.get("max_results", 5))
-            return {
-                "status": "success",
-                "results": [
-                    {"title": r.title, "source": r.source, "abstract": r.abstract_snippet}
-                    for r in results
-                ],
-            }
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
-
-    return {"status": "error", "message": f"Unknown tool: {name}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # ── Worker ────────────────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ class ScientificContextAssembler:
             "hview_symbolic_summary": hview_summary,
             "hview_projection_dict": hview_projection_dict,
             "authoritative_records": authoritative_records,
-            "tool_schemas": self.registry_schemas
+            "tool_schemas": [schema for schema in self.registry_schemas if getattr(schema, "action_type", schema.get("action_type") if isinstance(schema, dict) else None) == "READ" or (hasattr(schema, "action_type") and schema.action_type.name == "READ")]
         }
         
         return context

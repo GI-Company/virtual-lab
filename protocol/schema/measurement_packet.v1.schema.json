@@ -3,42 +3,65 @@
   "title": "MeasurementPacket",
   "type": "object",
   "properties": {
-    "protocol_version": {
+    "schema_version": {
       "type": "string",
-      "const": "1.0"
+      "const": "1"
     },
     "message_type": {
       "type": "string",
-      "const": "measurement"
+      "const": "MEASUREMENT_PACKET"
     },
     "stream_id": {
       "type": "string"
     },
+    "device_id": {
+      "type": "string"
+    },
     "device_timebase": {
+      "type": "string",
+      "const": "MONOTONIC"
+    },
+    "device_timestamp_ns": {
       "type": "integer"
     },
-    "sensor": {
+    "device_utc_ns": {
+      "type": ["integer", "null"]
+    },
+    "sequence": {
+      "type": "integer"
+    },
+    "sensor_id": {
       "type": "string"
     },
-    "x": {
-      "type": "number"
-    },
-    "y": {
-      "type": "number"
-    },
-    "z": {
-      "type": "number"
-    },
-    "unit": {
+    "measurement_type": {
       "type": "string"
+    },
+    "source_session_id": {
+      "type": ["string", "null"]
+    },
+    "values": {
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "accuracy": {
+      "type": ["integer", "string", "null"]
     }
   },
   "required": [
-    "protocol_version", 
+    "schema_version", 
     "message_type", 
-    "stream_id", 
+    "stream_id",
+    "device_id",
     "device_timebase", 
-    "sensor", 
-    "unit"
+    "device_timestamp_ns",
+    "sequence",
+    "sensor_id", 
+    "measurement_type",
+    "values",
+    "units"
   ]
 }

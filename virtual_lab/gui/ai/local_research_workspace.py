@@ -8,6 +8,17 @@ from PySide6.QtGui import QColor, QPen, QBrush, QFont, QPainter
 import json
 import uuid
 
+class ChatTextEdit(QTextEdit):
+    returnPressed = Signal()
+    
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Return and not event.modifiers() & Qt.ShiftModifier:
+            self.returnPressed.emit()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+
 class AgentRuntimeWorker(QObject):
     episode_started = Signal(str)
     hview_created = Signal(dict)
@@ -232,8 +243,9 @@ class LocalResearchWorkspace(QWidget):
         
         # Prompt input
         prompt_layout = QHBoxLayout()
-        self.txt_prompt = QTextEdit()
+        self.txt_prompt = ChatTextEdit()
         self.txt_prompt.setMaximumHeight(60)
+        self.txt_prompt.returnPressed.connect(self._on_send)
         self.btn_send = QPushButton("Send")
         self.btn_send.clicked.connect(self._on_send)
         prompt_layout.addWidget(self.txt_prompt)

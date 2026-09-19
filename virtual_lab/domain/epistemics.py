@@ -38,3 +38,4 @@ class QualityState(Enum):
     INCOMPLETE  = "INCOMPLETE"
     INVALID     = "INVALID"
     QUARANTINED = "QUARANTINED"
+    UNKNOWN     = "UNKNOWN"

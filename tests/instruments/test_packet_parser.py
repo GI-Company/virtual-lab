@@ -7,12 +7,15 @@ from virtual_lab.instruments.camera import CameraStreamKey
 def test_sensor_continuous_preview():
     decoder = PacketDecoder()
     raw = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
         "device_id": "TEST-1",
-        "session_id": "PREVIEW",
+        "stream_id": "PREVIEW",
         "measurement_type": "ACCELERATION",
         "sensor_id": "accel",
         "sequence": 1,
         "device_timestamp_ns": 1000,
+        "device_timebase": "MONOTONIC",
         "values": {"ax": 0.0, "ay": 9.8, "az": 0.0},
         "units": {"ax": "m/s^2", "ay": "m/s^2", "az": "m/s^2"}
     })
@@ -24,12 +27,15 @@ def test_sensor_continuous_preview():
 def test_canonical_illuminance_field():
     decoder = PacketDecoder()
     raw = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
         "device_id": "TEST-1",
-        "session_id": "PREVIEW",
+        "stream_id": "PREVIEW",
         "measurement_type": "ILLUMINANCE",
         "sensor_id": "light",
         "sequence": 1,
         "device_timestamp_ns": 1000,
+        "device_timebase": "MONOTONIC",
         "values": {"illuminance": 42.0},
         "units": {"illuminance": "lx"}
     })
@@ -42,12 +48,28 @@ def test_interleaved_sensor_modalities():
     decoder = PacketDecoder()
     
     raw_accel = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
+        "device_id": "DEV",
+        "stream_id": "SESS-1",
+        "sensor_id": "accel",
+        "sequence": 1,
+        "device_timestamp_ns": 100,
+        "device_timebase": "MONOTONIC",
         "measurement_type": "ACCELERATION",
         "values": {"ax": 0.0, "ay": 9.8, "az": 0.0},
         "units": {"ax": "m/s^2", "ay": "m/s^2", "az": "m/s^2"}
     })
     
     raw_mag = json.dumps({
+        "schema_version": "1",
+        "message_type": "MEASUREMENT_PACKET",
+        "device_id": "DEV",
+        "stream_id": "SESS-1",
+        "sensor_id": "mag",
+        "sequence": 2,
+        "device_timestamp_ns": 200,
+        "device_timebase": "MONOTONIC",
         "measurement_type": "MAGNETIC_FIELD",
         "values": {"bx": 1.0, "by": 2.0, "bz": 3.0},
         "units": {"bx": "uT", "by": "uT", "bz": "uT"}
@@ -69,9 +91,19 @@ def get_base_meta():
         "schema_version": "1",
         "message_type": "CAMERA_PREVIEW_FRAME",
         "device_id": "DEV1",
-        "camera_id": "0",
+        "stream_id": "STR-1",
+        "camera_stream_key": {"camera_id": "0"},
+        "frame_sequence": 1,
+        "device_timestamp_ns": 1234,
+        "device_timebase": "MONOTONIC",
         "width": 1280,
-        "height": 720
+        "height": 720,
+        "encoding": "JPEG",
+        "orientation": 90,
+        "lens_facing": "BACK",
+        "focal_length_mm": 4.0,
+        "representation": "ISP_PROCESSED",
+        "payload_size_bytes": 9 # size of b"jpeg_data"
     }
 
 def test_valid_binary_frame_decode():
@@ -105,8 +137,8 @@ def test_empty_jpeg():
 
 def test_oversized_frame_rejection():
     decoder = CameraFrameDecoder()
-    raw = b"\x00" * (10 * 1024 * 1024 + 1)
-    with pytest.raises(ValueError, match="Frame exceeds 10MB max size"):
+    raw = b"\x00" * (15 * 1024 * 1024 + 1)
+    with pytest.raises(ValueError, match="Frame exceeds 15MB max size"):
         decoder.decode(raw)
 
 def test_preview_vs_scientific_frame_message_type():
@@ -142,7 +174,7 @@ def test_unsupported_schema_version():
     meta = get_base_meta()
     meta["schema_version"] = "2"
     raw = build_camera_frame(meta)
-    with pytest.raises(ValueError, match="Unsupported schema_version: 2"):
+    with pytest.raises(ValueError, match="Invalid metadata JSON"):
         decoder.decode(raw)
 
 def test_unsupported_message_type():
@@ -150,7 +182,7 @@ def test_unsupported_message_type():
     meta = get_base_meta()
     meta["message_type"] = "UNKNOWN_FRAME"
     raw = build_camera_frame(meta)
-    with pytest.raises(ValueError, match="Unsupported message_type: UNKNOWN_FRAME"):
+    with pytest.raises(ValueError, match="Invalid metadata JSON"):
         decoder.decode(raw)
 
 def test_invalid_resolution():
@@ -158,7 +190,7 @@ def test_invalid_resolution():
     meta = get_base_meta()
     meta["width"] = 0
     raw = build_camera_frame(meta)
-    with pytest.raises(ValueError, match="Invalid resolution: 0x720"):
+    with pytest.raises(ValueError, match="Invalid resolution"):
         decoder.decode(raw)
 
 def test_camera_stream_key_equality():

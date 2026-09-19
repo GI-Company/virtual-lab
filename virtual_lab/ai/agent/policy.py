@@ -32,7 +32,7 @@ class PolicyEngine:
         if schema.action_type == ToolActionType.READ:
             # Execute automatically
             if tool_name not in self._executors:
-                return f"Mock read result for {tool_name}"
+                raise NotImplementedError(f"No executor registered for READ tool {tool_name}")
             return self._executors[tool_name](**args)
             
         elif schema.action_type == ToolActionType.PROPOSE:
@@ -91,7 +91,7 @@ class PolicyEngine:
             if tool_name in self._executors:
                 result = self._executors[tool_name](**args)
             else:
-                result = f"Mock action execution for {tool_name}"
+                raise NotImplementedError(f"No executor registered for ACTION tool {tool_name}")
             
             self.genesis.record_action_executed(episode_id, proposal_id, target_ref=tool_name)
             return result

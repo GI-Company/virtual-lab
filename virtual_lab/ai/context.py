@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import hashlib
-from ..core.ledger import canonicalJSON
+from virtual_lab.core.canonical import canonical_json
 
 class ScientificContext(BaseModel):
     context_id: str
@@ -29,5 +29,5 @@ class ScientificContext(BaseModel):
     selected_results: Optional[Dict[str, Any]] = None
 
 def generate_context_hash(context: ScientificContext) -> str:
-    canonical_str = canonicalJSON(context.model_dump())
-    return hashlib.sha256(canonical_str.encode('utf-8')).hexdigest()
+    canonical_bytes = canonical_json(context.model_dump())
+    return hashlib.sha256(canonical_bytes).hexdigest()

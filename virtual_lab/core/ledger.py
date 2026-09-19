@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 from pathlib import Path
 import os
+from virtual_lab.core.canonical import canonical_json
 
 class Actor(BaseModel):
     type: str
@@ -24,15 +25,11 @@ class LedgerEvent(BaseModel):
     parent_hash: str
     event_hash: str = ""
 
-def canonicalJSON(data: Any) -> str:
-    """Produces a deterministic, canonical JSON string for hashing."""
-    return json.dumps(data, separators=(",", ":"), sort_keys=True, allow_nan=False)
-
 def compute_event_hash(event: LedgerEvent) -> str:
     # Hash everything except the event_hash itself
     envelope = event.model_dump(exclude={"event_hash"})
-    canonical_str = canonicalJSON(envelope)
-    return hashlib.sha256(canonical_str.encode('utf-8')).hexdigest()
+    canonical_bytes = canonical_json(envelope)
+    return hashlib.sha256(canonical_bytes).hexdigest()
 
 class ChainIntegrityError(Exception):
     pass
@@ -50,8 +47,6 @@ class GenesisLedger:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         
-        # We don't pretend SQLite itself makes this immutable against a determined adversary,
-        # but the hash chain ensures tampering is evident.
         self.conn.execute("""
         CREATE TABLE IF NOT EXISTS ledger_events (
             sequence INTEGER PRIMARY KEY,
@@ -67,7 +62,6 @@ class GenesisLedger:
         )
         """)
         
-        # SQLite trigger to prevent UPDATE/DELETE at the DB level (basic safety guardrail)
         self.conn.execute("""
         CREATE TRIGGER IF NOT EXISTS prevent_ledger_update
         BEFORE UPDATE ON ledger_events
@@ -84,7 +78,6 @@ class GenesisLedger:
         """)
         self.conn.commit()
 
-        # If table is empty, write Genesis event
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM ledger_events")
         if cursor.fetchone()[0] == 0:
@@ -104,7 +97,6 @@ class GenesisLedger:
         self._insert_event(genesis_event)
         
     def _insert_event(self, event: LedgerEvent):
-        actor_dict = event.actor.model_dump()
         self.conn.execute(
             """
             INSERT INTO ledger_events (
@@ -130,12 +122,7 @@ class GenesisLedger:
         return self._row_to_event(row)
         
     def _row_to_event(self, row: sqlite3.Row) -> LedgerEvent:
-        # Reconstruct Actor
         actor = Actor(type=row["actor_type"], id=row["actor_id"])
-        
-        # In a real app we might store provider/model in dedicated columns or serialized actor JSON. 
-        # For simplicity here we just instantiate with type/id.
-        
         return LedgerEvent(
             schema_version=row["schema_version"],
             sequence=row["sequence"],
@@ -148,11 +135,30 @@ class GenesisLedger:
             event_hash=row["event_hash"]
         )
 
+    def get_events_by_proposal(self, proposal_id: str) -> List[LedgerEvent]:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM ledger_events WHERE json_extract(payload_json, '$.proposal_id') = ? ORDER BY sequence ASC", (proposal_id,))
+        return [self._row_to_event(row) for row in cursor.fetchall()]
+
     def append(self, event_id: str, actor: Actor, event_type: str, payload: Dict[str, Any]) -> str:
         head = self.get_head()
         if head is None:
             raise RuntimeError("Genesis ledger is empty; should have initialized.")
             
+        proposal_id = payload.get("proposal_id")
+        if proposal_id:
+            workflow_events = self.get_events_by_proposal(proposal_id)
+            workflow_types = [evt.event_type for evt in workflow_events]
+            
+            if event_type in ["AI_PROPOSAL", "RULE_EVALUATION", "HUMAN_DECISION"]:
+                if event_type in workflow_types:
+                    raise ChainIntegrityError(f"Workflow sequence violation: {event_type} already exists for {proposal_id}")
+            
+            if event_type == "RULE_EVALUATION" and "AI_PROPOSAL" not in workflow_types:
+                raise ChainIntegrityError(f"Workflow sequence violation: RULE_EVALUATION requires preceding AI_PROPOSAL for {proposal_id}")
+            if event_type == "HUMAN_DECISION" and ("AI_PROPOSAL" not in workflow_types or "RULE_EVALUATION" not in workflow_types):
+                raise ChainIntegrityError(f"Workflow sequence violation: HUMAN_DECISION requires preceding AI_PROPOSAL and RULE_EVALUATION for {proposal_id}")
+
         new_event = LedgerEvent(
             sequence=head.sequence + 1,
             event_id=event_id,
@@ -166,8 +172,14 @@ class GenesisLedger:
         self._insert_event(new_event)
         return new_event.event_hash
         
+    def get_approval_record(self, proposal_id: str) -> Optional[Dict[str, Any]]:
+        events = self.get_events_by_proposal(proposal_id)
+        for evt in events:
+            if evt.event_type == "AI_PROPOSAL":
+                return evt.payload
+        return None
+
     def verify_chain(self):
-        """Verifies the complete hash chain from Genesis to HEAD."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM ledger_events ORDER BY sequence ASC")
         rows = cursor.fetchall()
@@ -178,20 +190,13 @@ class GenesisLedger:
         prev_hash = "0" * 64
         for i, row in enumerate(rows):
             event = self._row_to_event(row)
-            
-            # Verify parent link
             if event.parent_hash != prev_hash:
                 raise ChainIntegrityError(
-                    f"CHAIN INTEGRITY FAILURE: Event {event.event_id} (seq {event.sequence}) "
-                    f"expected parent {prev_hash} but found {event.parent_hash}."
+                    f"CHAIN INTEGRITY FAILURE: Event {event.event_id} expected parent {prev_hash} but found {event.parent_hash}."
                 )
-                
-            # Verify event hash
             expected_hash = compute_event_hash(event)
             if event.event_hash != expected_hash:
                 raise ChainIntegrityError(
-                    f"CHAIN INTEGRITY FAILURE: Event {event.event_id} (seq {event.sequence}) "
-                    f"has invalid hash. Expected {expected_hash}, observed {event.event_hash}."
+                    f"CHAIN INTEGRITY FAILURE: Event {event.event_id} has invalid hash. Expected {expected_hash}, observed {event.event_hash}."
                 )
-                
             prev_hash = event.event_hash

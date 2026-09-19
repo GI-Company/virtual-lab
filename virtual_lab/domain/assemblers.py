@@ -21,17 +21,14 @@ from virtual_lab.domain.observation import (
 )
 
 
+import uuid
+
 def session_commit_to_observation(
     commit_info: dict,
     experiment_id: str,
 ) -> ExperimentObservation:
     """
     Convert a JsonlMeasurementStore.commit() result dict into an ExperimentObservation.
-
-    commit_info keys expected:
-        session_id, instrument_id, artifact_path, artifact_sha256,
-        sample_count_total, duration_s, acquisition_utc,
-        sample_counts (dict: quantity_type → count)
     """
     session_id      = commit_info["session_id"]
     instrument_id   = commit_info.get("instrument_id", "UNKNOWN")
@@ -42,14 +39,12 @@ def session_commit_to_observation(
     duration_s      = commit_info.get("duration_s", 0.0)
     quantity_types: Dict[str, int] = commit_info.get("sample_counts", {})
 
-    # Collect all QuantityDescriptors for each measurement type observed in this session
     quantities: List[QuantityDescriptor] = []
     for qt in quantity_types:
         descriptors = SENSOR_QUANTITY_MAP.get(qt)
         if descriptors:
             quantities.extend(descriptors)
         else:
-            # Unknown sensor type — attach a placeholder with UNKNOWN dimension
             from virtual_lab.domain.observation import PhysicalDimension
             quantities.append(QuantityDescriptor(
                 semantic_name=f"unknown_{qt.lower()}",
@@ -60,8 +55,9 @@ def session_commit_to_observation(
                 epistemic_state=EpistemicState.MEASURED,
             ))
 
-    return ExperimentObservation(
-        observation_id=ExperimentObservation.new_id(),
+    from virtual_lab.domain.observation import RawObservation
+    return RawObservation(
+        observation_id=str(uuid.uuid4()),
         experiment_id=experiment_id,
         session_id=session_id,
         instrument_id=instrument_id,
@@ -72,7 +68,6 @@ def session_commit_to_observation(
         acquisition_utc=acquisition_utc,
         sample_count=sample_count,
         duration_s=duration_s,
-        epistemic_state=EpistemicState.MEASURED,
     )
 
 
@@ -82,17 +77,15 @@ def simulation_result_to_observation(
 ) -> ExperimentObservation:
     """
     Convert a simulation_runner.run_simulation() result dict into an ExperimentObservation.
-
-    The trajectory is SIMULATED; the assumed parameters that drive it are MODEL_ASSUMPTION
-    (recorded separately in VirtualExperiment.parameters with appropriate epistemic tags).
     """
     run_id          = result["id"]
     artifact_sha256 = result.get("artifact_sha256", "")
     artifact_path   = result.get("artifact_path", "")
     acquisition_utc = result.get("created_at", "")
 
-    return ExperimentObservation(
-        observation_id=ExperimentObservation.new_id(),
+    from virtual_lab.domain.observation import NormalizedObservation
+    return NormalizedObservation(
+        observation_id=str(uuid.uuid4()),
         experiment_id=experiment_id,
         session_id=run_id,
         instrument_id="simulation",
@@ -114,18 +107,17 @@ def chemistry_result_to_observation(
 ) -> ExperimentObservation:
     """
     Convert a ChemistryEngine result dict into an ExperimentObservation.
-    epistemic_state=CALCULATED; calculation_type is stored in notes.
     """
     from virtual_lab.domain.observation import (
-        CHEM_MOLECULAR_WEIGHT, CHEM_LOGP, CHEM_TPSA,
+        CHEM_MOLECULAR_WEIGHT, CHEM_LOGP, CHEM_TPSA, NormalizedObservation
     )
     import json
     from datetime import datetime, timezone
 
     quantities = [CHEM_MOLECULAR_WEIGHT, CHEM_LOGP, CHEM_TPSA]
 
-    return ExperimentObservation(
-        observation_id=ExperimentObservation.new_id(),
+    return NormalizedObservation(
+        observation_id=str(uuid.uuid4()),
         experiment_id=experiment_id,
         session_id=f"chem-{compound_id}",
         instrument_id="rdkit",

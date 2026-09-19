@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from virtual_lab.domain.epistemics import EpistemicState
+from virtual_lab.domain.epistemics import EpistemicState, QualityState
 from virtual_lab.domain.observation import (
     ExperimentObservation,
     ObservationKind,
@@ -130,6 +130,7 @@ class ExperimentStore:
                 instrument_id    TEXT NOT NULL,
                 kind             TEXT NOT NULL,
                 epistemic_state  TEXT NOT NULL,
+                quality_state    TEXT NOT NULL DEFAULT 'UNKNOWN',
                 artifact_path    TEXT NOT NULL,
                 artifact_sha256  TEXT NOT NULL,
                 acquisition_utc  TEXT NOT NULL,
@@ -138,6 +139,7 @@ class ExperimentStore:
                 quantities_json  TEXT NOT NULL DEFAULT '[]',
                 calibration_id   TEXT,
                 notes            TEXT,
+                parent_observation_id TEXT,
                 FOREIGN KEY (experiment_id) REFERENCES experiments(id)
             );
 
@@ -148,6 +150,7 @@ class ExperimentStore:
                 instrument_id    TEXT NOT NULL,
                 session_id       TEXT NOT NULL,
                 epistemic_state  TEXT NOT NULL,
+                quality_state    TEXT NOT NULL DEFAULT 'UNKNOWN',
                 artifact_path    TEXT NOT NULL,
                 artifact_sha256  TEXT NOT NULL,
                 acquisition_utc  TEXT NOT NULL,
@@ -209,14 +212,25 @@ class ExperimentStore:
     # ── Observations ──────────────────────────────────────────────────────────
 
     def save_observation(self, obs: ExperimentObservation):
+        existing = self._conn.execute(
+            "SELECT epistemic_state, artifact_sha256 FROM observations WHERE observation_id = ?",
+            (obs.observation_id,)
+        ).fetchone()
+
+        if existing and existing["epistemic_state"] == EpistemicState.MEASURED.value:
+            if existing["artifact_sha256"] != obs.artifact_sha256:
+                raise ValueError("Cannot mutate an existing MEASURED RawObservation")
+                
+        parent_id = getattr(obs, "parent_observation_id", None)
+
         self._conn.execute(
             """
             INSERT OR REPLACE INTO observations
                 (observation_id, experiment_id, session_id, instrument_id,
-                 kind, epistemic_state, artifact_path, artifact_sha256,
+                 kind, epistemic_state, quality_state, artifact_path, artifact_sha256,
                  acquisition_utc, sample_count, duration_s, quantities_json,
-                 calibration_id, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 calibration_id, notes, parent_observation_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 obs.observation_id,
@@ -225,6 +239,7 @@ class ExperimentStore:
                 obs.instrument_id,
                 obs.kind.value,
                 obs.epistemic_state.value,
+                getattr(obs, "quality_state", getattr(QualityState, "UNKNOWN", "UNKNOWN")).value if hasattr(obs, "quality_state") and hasattr(getattr(obs, "quality_state"), "value") else getattr(obs, "quality_state", "UNKNOWN"),
                 obs.artifact_path,
                 obs.artifact_sha256,
                 obs.acquisition_utc,
@@ -233,6 +248,7 @@ class ExperimentStore:
                 _serialize_quantities(obs.quantities),
                 obs.calibration_id,
                 obs.notes,
+                parent_id
             ),
         )
         self._conn.commit()
@@ -247,22 +263,33 @@ class ExperimentStore:
         return [self._row_to_obs(r) for r in rows]
 
     def _row_to_obs(self, row: sqlite3.Row) -> ExperimentObservation:
-        return ExperimentObservation(
-            observation_id=row["observation_id"],
-            experiment_id=row["experiment_id"],
-            session_id=row["session_id"],
-            instrument_id=row["instrument_id"],
-            kind=ObservationKind(row["kind"]),
-            epistemic_state=EpistemicState(row["epistemic_state"]),
-            artifact_path=row["artifact_path"],
-            artifact_sha256=row["artifact_sha256"],
-            acquisition_utc=row["acquisition_utc"],
-            sample_count=row["sample_count"],
-            duration_s=row["duration_s"],
-            quantities=_deserialize_quantities(row["quantities_json"]),
-            calibration_id=row["calibration_id"],
-            notes=row["notes"],
-        )
+        from virtual_lab.domain.observation import RawObservation, NormalizedObservation
+        kind = ObservationKind(row["kind"])
+        epistemic_state = EpistemicState(row["epistemic_state"])
+        quality_state = QualityState(row["quality_state"]) if "quality_state" in row.keys() else QualityState.UNKNOWN
+        parent_id = row["parent_observation_id"] if "parent_observation_id" in row.keys() else None
+
+        kwargs = {
+            "observation_id": row["observation_id"],
+            "experiment_id": row["experiment_id"],
+            "session_id": row["session_id"],
+            "instrument_id": row["instrument_id"],
+            "kind": kind,
+            "artifact_path": row["artifact_path"],
+            "artifact_sha256": row["artifact_sha256"],
+            "acquisition_utc": row["acquisition_utc"],
+            "sample_count": row["sample_count"],
+            "duration_s": row["duration_s"],
+            "quantities": _deserialize_quantities(row["quantities_json"]),
+            "calibration_id": row["calibration_id"],
+            "notes": row["notes"],
+            "quality_state": quality_state
+        }
+
+        if epistemic_state == EpistemicState.MEASURED:
+            return RawObservation(**kwargs)
+        else:
+            return NormalizedObservation(epistemic_state=epistemic_state, parent_observation_id=parent_id, **kwargs)
 
     # ── Staging ───────────────────────────────────────────────────────────────
 
@@ -276,10 +303,10 @@ class ExperimentStore:
             """
             INSERT OR REPLACE INTO staging
                 (observation_id, staged_at, kind, instrument_id, session_id,
-                 epistemic_state, artifact_path, artifact_sha256,
+                 epistemic_state, quality_state, artifact_path, artifact_sha256,
                  acquisition_utc, sample_count, duration_s,
                  quantities_json, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 obs.observation_id,
@@ -288,6 +315,7 @@ class ExperimentStore:
                 obs.instrument_id,
                 obs.session_id,
                 obs.epistemic_state.value,
+                getattr(obs, "quality_state", getattr(QualityState, "UNKNOWN", "UNKNOWN")).value if hasattr(obs, "quality_state") and hasattr(getattr(obs, "quality_state"), "value") else getattr(obs, "quality_state", "UNKNOWN"),
                 obs.artifact_path,
                 obs.artifact_sha256,
                 obs.acquisition_utc,
@@ -318,21 +346,32 @@ class ExperimentStore:
         if not row:
             return None
 
-        obs = ExperimentObservation(
-            observation_id=row["observation_id"],
-            experiment_id=experiment_id,
-            session_id=row["session_id"],
-            instrument_id=row["instrument_id"],
-            kind=ObservationKind(row["kind"]),
-            epistemic_state=EpistemicState(row["epistemic_state"]),
-            artifact_path=row["artifact_path"],
-            artifact_sha256=row["artifact_sha256"],
-            acquisition_utc=row["acquisition_utc"],
-            sample_count=row["sample_count"],
-            duration_s=row["duration_s"],
-            quantities=_deserialize_quantities(row["quantities_json"]),
-            notes=row["notes"],
-        )
+        from virtual_lab.domain.observation import RawObservation, NormalizedObservation
+        
+        kind = ObservationKind(row["kind"])
+        epistemic_state = EpistemicState(row["epistemic_state"])
+        quality_state = QualityState(row["quality_state"]) if "quality_state" in row.keys() else QualityState.UNKNOWN
+
+        kwargs = {
+            "observation_id": row["observation_id"],
+            "experiment_id": experiment_id,
+            "session_id": row["session_id"],
+            "instrument_id": row["instrument_id"],
+            "kind": kind,
+            "artifact_path": row["artifact_path"],
+            "artifact_sha256": row["artifact_sha256"],
+            "acquisition_utc": row["acquisition_utc"],
+            "sample_count": row["sample_count"],
+            "duration_s": row["duration_s"],
+            "quantities": _deserialize_quantities(row["quantities_json"]),
+            "notes": row["notes"],
+            "quality_state": quality_state,
+        }
+
+        if epistemic_state == EpistemicState.MEASURED:
+            obs = RawObservation(**kwargs)
+        else:
+            obs = NormalizedObservation(epistemic_state=epistemic_state, **kwargs)
         self.save_observation(obs)
         self._conn.execute(
             "DELETE FROM staging WHERE observation_id = ?", (observation_id,)

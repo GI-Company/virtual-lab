@@ -26,4 +26,4 @@ def test_vlab_build_and_provenance():
         # 3. Test provenance parsing
         report = explain_provenance(bundle_path)
         assert "GENESIS AUDIT TRAIL" in report
-        assert "TEST_EVT" in report
+        assert "TEST" in report

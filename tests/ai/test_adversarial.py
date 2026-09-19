@@ -38,7 +38,7 @@ def test_cryptographic_execution_rejection():
         nonce="1234"
     )
     
-    fake_signature = b"invalid_signature_bytes"
+    fake_signature = b"0" * 64
     fake_public_key = b"0" * 32
     
     with pytest.raises(ValueError, match="NO_VALID_ED25519_APPROVAL"):

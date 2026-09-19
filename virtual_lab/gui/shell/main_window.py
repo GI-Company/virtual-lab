@@ -100,7 +100,6 @@ class VirtualLabApplication(QMainWindow):
         self.world = WorldWorkspace(self.workspace, self.evidence_store, self.mapping_service)
         self.experiment = ExperimentWorkspace(self.workspace)
         self.analysis = AnalysisWorkspace(self.workspace)
-        self.ai = AIWorkbench(self.workspace)
         self.local_research = LocalResearchWorkspace(self.workspace)
         from virtual_lab.gui.instruments.workspace import InstrumentsWorkspace
         self.instruments = InstrumentsWorkspace(self.workspace, ledger=self.ledger)
@@ -113,13 +112,11 @@ class VirtualLabApplication(QMainWindow):
         self.tabs.addTab(self.experiment, "Experiment")
         self.tabs.addTab(self.analysis, "Analysis")
         self.tabs.addTab(self.local_research, "Local Research Mode")
-        self.tabs.addTab(self.ai, "Design & ML Gate (Legacy)")
         self.tabs.addTab(self.instruments, "Instruments")
         self.tabs.addTab(self.evidence, "Evidence")
         self.tabs.addTab(self.provenance, "Provenance")
         self.tabs.addTab(self.numerical, "Numerical")
         self.tabs.addTab(self.compare, "Compare")
-        self.ai.controller = self.experiment.controller
         
         # Setup LocalResearchWorkspace backend wiring
         self.local_research.controller = self.runtime.agent_controller

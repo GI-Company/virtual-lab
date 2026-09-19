@@ -1,15 +1,18 @@
+import os
 import json
 import mlx.core as mx
 from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
 from PIL import Image, ImageDraw
 
+from virtual_lab.ai.agent.streaming import StreamingEnvelopeParser
+
 from virtual_lab.ai.providers.gemma4_unified.loader import Gemma4UnifiedLoader
 from virtual_lab.ai.providers.gemma4_unified.processor import Gemma4UnifiedProcessor
 
 @dataclass
 class GemmaRuntimeConfig:
-    checkpoint_path: str = "/Users/hanna/.lmstudio/models/lmstudio-community/gemma-4-12B-it-MLX-4bit"
+    checkpoint_path: Optional[str] = None
     local_only: bool = True
     max_context_budget: int = 8000
     max_decode_tokens: int = 500
@@ -24,8 +27,15 @@ class GemmaBackend:
         if not self.config.local_only:
             raise ValueError("Local Research Mode requires local_only=True")
             
-        print(f"Loading local MLX model from {self.config.checkpoint_path}...")
-        loader = Gemma4UnifiedLoader(self.config.checkpoint_path)
+        cp = self.config.checkpoint_path or os.environ.get("VIRTUALLAB_LOCAL_MODEL")
+        if not cp:
+            raise ValueError("VIRTUALLAB_LOCAL_MODEL environment variable must be set to the Gemma 4 E2B model path.")
+            
+        if "e2b" not in str(cp).lower():
+            print("WARNING: VIRTUALLAB_LOCAL_MODEL path does not contain 'E2B'. Operational PoC v0.1 expects Gemma 4 E2B.")
+            
+        print(f"Loading local MLX model from {cp}...")
+        loader = Gemma4UnifiedLoader(cp)
         
         # Load config to check certificate without full weight loading first if needed
         # We rely on the loader's generate_certificate output
@@ -249,6 +259,9 @@ Never claim a SIMULATED result "confirms" a physical outcome.
             # Sample with temperature 0.1 (multiply logits by 10) to break deterministic traps
             next_id = mx.random.categorical(logits * 10.0).item()
             mx.eval(out_dec, [c.keys for c in cache], [c.values for c in cache])
+            
+            # Yield to GUI thread
+            time.sleep(0.001)
             
         t3 = time.perf_counter()
         decode_time = t3 - t2

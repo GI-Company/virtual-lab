@@ -64,14 +64,19 @@ class VisionConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "VisionConfig":
+        patch_size = data.get("patch_size", 16)
+        model_patch_size = data.get("model_patch_size", patch_size)
+        patch_dim = data.get("patch_dim", 3 * (model_patch_size ** 2))
+        hidden_size = data.get("hidden_size", 768)
+        
         return cls(
-            patch_size=data.get("patch_size", 16),
-            model_patch_size=data.get("model_patch_size", 48),
-            patch_dim=data.get("patch_dim", 6912),
-            mm_embed_dim=data.get("mm_embed_dim", 3840),
+            patch_size=patch_size,
+            model_patch_size=model_patch_size,
+            patch_dim=patch_dim,
+            mm_embed_dim=data.get("mm_embed_dim", hidden_size),
             mm_posemb_size=data.get("mm_posemb_size", 1120),
             num_soft_tokens=data.get("num_soft_tokens", 280),
-            output_proj_dims=data.get("output_proj_dims", 3840),
+            output_proj_dims=data.get("output_proj_dims", hidden_size),
             rms_norm_eps=data.get("rms_norm_eps", 1e-6)
         )
 

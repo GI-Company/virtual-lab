@@ -182,12 +182,15 @@ class Gemma4UnifiedModel(nn.Module):
         ):
             kvs, k_offset = intermediates[prev_idx]
             
-            # Adjust mask length for RotatingKVCache
+            # Adjust mask length for RotatingKVCache (sliding attention)
             mask = mask_proto
-            if c is not None and hasattr(c, "max_size"):
+            if c is not None:
                 step = h.shape[1]
-                if step == 1:
-                    expected_k_len = min(c.offset + step, c.max_size)
+                if step == 1 and layer.layer_type == "sliding_attention":
+                    window_size = getattr(lm, "window_size", 512)
+                    # For rotating cache, the key length cannot exceed window_size
+                    # The mask is currently length `mm_state.sequence_length`.
+                    expected_k_len = min(mm_state.sequence_length, window_size)
                     if mask is not None and mask.shape[-1] > expected_k_len:
                         mask = mask[..., -expected_k_len:]
                     

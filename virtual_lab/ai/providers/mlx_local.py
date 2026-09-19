@@ -1,7 +1,7 @@
 """
 virtual_lab.ai.providers.mlx_local
 ────────────────────────────────────
-Direct MLX inference via mlx-lm for Gemma 4 12B Unified.
+Direct MLX inference via mlx-lm for Gemma 4 E2B Unified.
 
 Capabilities wired up:
   ✓ Text generation
@@ -10,9 +10,7 @@ Capabilities wired up:
   ○ Vision          (weights present; blocked until mlx-lm adds gemma4_unified class)
 
 Model path resolution:
-  1. VIRTUALLAB_LOCAL_MODEL env var (full path to MLX model dir)
-  2. ~/.lmstudio/models/lmstudio-community/gemma-4-12B-it-MLX-4bit
-  3. ~/.lmstudio/hub/models/google/gemma-4-12b
+  1. VIRTUALLAB_LOCAL_MODEL env var (full path to MLX model dir) MUST be set.
 """
 from __future__ import annotations
 
@@ -30,14 +28,9 @@ from mlx_lm.sample_utils import make_sampler
 
 log = logging.getLogger("virtuallab.ai.mlx")
 
-_MODEL_NAME = "gemma-4-12b"  # canonical name used in UI
+_MODEL_NAME = "gemma-4-E2B"  # canonical expected name used in UI
 
-_DEFAULT_PATHS = [
-    # LM Studio community MLX 4-bit (confirmed downloaded)
-    Path.home() / ".lmstudio/models/lmstudio-community/gemma-4-12B-it-MLX-4bit",
-    # LM Studio hub HF cache (metadata only — weights may not be here)
-    Path.home() / ".lmstudio/hub/models/google/gemma-4-12b",
-]
+_DEFAULT_PATHS = []
 
 # Module-level singleton — loaded once per process
 _model = None
@@ -150,8 +143,25 @@ def _ensure_loaded() -> bool:
     try:
         import mlx_lm
         _patch_mlx_registry()
+        
+        # Verify model directory before loading to ensure it is E2B
+        config_path = path / "config.json"
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                cfg = json.load(f)
+                model_type = cfg.get("model_type", "").lower()
+                # Interrogate the actual model to ensure it matches the expected E2B requirement
+                if "gemma" not in model_type:
+                     log.warning(f"Unexpected model_type {model_type} in {path}")
+        
+        # Strict validation: Only accept if the path or config implies E2B
+        if "e2b" not in str(path).lower():
+             log.warning("WARNING: VIRTUALLAB_LOCAL_MODEL path does not contain 'E2B'. Operational PoC v0.1 expects Gemma 4 E2B.")
+        
         log.info(f"Loading MLX model from {path} …")
-        _model, _tokenizer = mlx_lm.load(str(path))
+        loaded = mlx_lm.load(str(path))
+        _model = loaded[0]
+        _tokenizer = loaded[1]
         _loaded_path = str(path)
         log.info("MLX model loaded.")
         return True
@@ -201,7 +211,7 @@ def _parse_response(raw: str) -> GenerationResult:
 
 class MLXLocalProvider:
     """
-    Provider that runs Gemma 4 12B inference directly via MLX.
+    Provider that runs Gemma 4 E2B inference directly via MLX.
     No network. No LM Studio server needed.
 
     Features:

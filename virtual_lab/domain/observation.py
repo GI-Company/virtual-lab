@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
-from virtual_lab.domain.epistemics import EpistemicState
+from virtual_lab.domain.epistemics import EpistemicState, QualityState
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -336,6 +336,7 @@ class ExperimentObservation:
     duration_s: float = 0.0
     notes: Optional[str] = None
     calibration_id: Optional[str] = None
+    quality_state: QualityState = QualityState.UNKNOWN
 
 @dataclass(frozen=True)
 class RawObservation(ExperimentObservation):
