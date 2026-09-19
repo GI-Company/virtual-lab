@@ -163,6 +163,18 @@ class ExperimentStore:
             CREATE INDEX IF NOT EXISTS idx_obs_experiment
                 ON observations(experiment_id);
         """)
+        
+        # Migrate schema for existing tables if columns are missing
+        obs_cols = {r[1] for r in c.execute("PRAGMA table_info(observations)").fetchall()}
+        if "quality_state" not in obs_cols:
+            c.execute("ALTER TABLE observations ADD COLUMN quality_state TEXT NOT NULL DEFAULT 'UNKNOWN'")
+        if "parent_observation_id" not in obs_cols:
+            c.execute("ALTER TABLE observations ADD COLUMN parent_observation_id TEXT")
+
+        staging_cols = {r[1] for r in c.execute("PRAGMA table_info(staging)").fetchall()}
+        if "quality_state" not in staging_cols:
+            c.execute("ALTER TABLE staging ADD COLUMN quality_state TEXT NOT NULL DEFAULT 'UNKNOWN'")
+            
         c.commit()
 
     # ── Experiments ───────────────────────────────────────────────────────────
