@@ -1,11 +1,12 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QGroupBox, 
-    QSplitter, QGridLayout, QFrame, QTextEdit, QStackedWidget, QListWidget, QListWidgetItem,
+    QSplitter, QGridLayout, QFrame, QTextEdit, QLineEdit, QStackedWidget, QListWidget, QListWidgetItem,
     QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsTextItem, QGraphicsRectItem
 )
 from PySide6.QtCore import Qt, QThread, QObject, Signal, Slot
 from PySide6.QtGui import QColor, QPen, QBrush, QFont, QPainter
 import json
+import os
 import uuid
 
 class ChatTextEdit(QTextEdit):
@@ -35,7 +36,7 @@ class AgentRuntimeWorker(QObject):
     stream_delta = Signal(str)
     stream_event = Signal(str, dict)
     
-    def __init__(self, controller, experiment_id, hview_summary, auth_records, memory_revision, proj_dict):
+    def __init__(self, controller, experiment_id, hview_summary, auth_records, memory_revision, proj_dict, agent_runtime=None):
         super().__init__()
         self.controller = controller
         self.experiment_id = experiment_id
@@ -43,17 +44,53 @@ class AgentRuntimeWorker(QObject):
         self.auth_records = auth_records
         self.memory_revision = memory_revision
         self.proj_dict = proj_dict
+        self.agent_runtime = agent_runtime
         
     @Slot(str)
     def run_episode(self, user_request):
         try:
-            self.episode_started.emit("Starting episode")
-            episode = self.controller.run_episode(
-                user_request, self.experiment_id, self.hview_summary, 
-                self.auth_records, self.memory_revision, self.proj_dict,
-                stream_callback=self._handle_stream
-            )
-            self._handle_termination(episode)
+            self.episode_started.emit("Starting Google Vertex ADK Multi-Agent episode")
+            from google.genai import types
+
+            async def _run_adk():
+                session = await self.agent_runtime.get_or_create_session(self.experiment_id, user_id="local_operator")
+                final_text = ""
+                async for event in self.agent_runtime.runner.run_async(
+                    user_id="local_operator",
+                    session_id=session.id,
+                    new_message=types.Content(role="user", parts=[types.Part.from_text(text=user_request)])
+                ):
+                    if event.actions and getattr(event.actions, "transfer_to_agent", None):
+                        self.reasoning_step_added.emit({"type": "DELEGATION", "id": "delegation", "tool": f"Director \u2192 {event.actions.transfer_to_agent}"})
+                        self.stream_event.emit("DELEGATION", {"raw": f"Director \u2192 {event.actions.transfer_to_agent}"})
+                    if event.content and event.content.parts:
+                        for p in event.content.parts:
+                            if p.text:
+                                display_text = p.text
+                                try:
+                                    handoff = __import__('json').loads(p.text)
+                                    if handoff.get("schema_version") == "vlab.handoff.v1":
+                                        display_text = handoff.get("summary") or p.text
+                                except (ValueError, AttributeError):
+                                    pass
+                                final_text = display_text
+                                self.stream_delta.emit(f"[{event.author or 'Director'}]: {display_text}\n\n")
+                            elif p.function_call:
+                                tool_name = p.function_call.name
+                                self.reasoning_step_added.emit({"type": "TOOL_REQUEST", "id": "tool", "tool": tool_name})
+                                self.stream_event.emit("TOOL_CALL_STARTED", {"raw": f"[{event.author} TOOL]: {tool_name}"})
+                            elif p.function_response:
+                                self.reasoning_step_added.emit({"type": "TOOL_RESULT", "id": "tool", "tool": "completed"})
+                                self.stream_event.emit("TOOL_CALL_COMPLETE", {"raw": f"[{event.author} RESULT DONE]"})
+                return final_text
+
+            # Execute in the background thread's event loop
+            future = self.agent_runtime.run_coroutine(_run_adk())
+
+            # Wait for it, but safely yield to qt event loop or just block since this is a QThread
+            answer = future.result()
+            self.answer_completed.emit(answer, ["VERTEX_ADK", "MULTI_AGENT"])
+
         except Exception as e:
             self.episode_failed.emit(str(e))
             
@@ -149,9 +186,11 @@ class HVIEWGraphicsView(QGraphicsView):
                 self.scene.addItem(line)
 
 class LocalResearchWorkspace(QWidget):
-    def __init__(self, workspace, parent=None):
+    def __init__(self, workspace, parent=None, agent_runtime=None, prediction_ledger=None):
         super().__init__(parent)
+        self.prediction_ledger = prediction_ledger
         self.workspace_state = workspace
+        self.agent_runtime = agent_runtime
         self.controller = None
         
         # Thread lifecycle management
@@ -163,20 +202,32 @@ class LocalResearchWorkspace(QWidget):
         # 1. LocalResearchStatusPanel (Header)
         self.status_panel = QFrame()
         self.status_panel.setStyleSheet("background-color: #1e293b; border-radius: 4px; padding: 5px;")
+        self.status_panel.setFixedHeight(76)
         status_layout = QHBoxLayout(self.status_panel)
         
-        self.lbl_cert = QLabel("<b>Gemma 4 12B Unified</b><br/><span style='color: #22c55e;'>LOCAL<br/>MULTIMODAL FUNCTIONAL<br/>MASK SEMANTICS VERIFIED<br/>FULL MODEL NUMERIC PARITY: NOT RUN</span>")
+        self.lbl_cert = QLabel("Google Vertex AI Agent Development Kit")
         self.lbl_cert.setStyleSheet("color: #94a3b8;")
         status_layout.addWidget(self.lbl_cert)
         
-        self.lbl_metrics = QLabel("Text: 0 | Image: 0 | Pos: 0 | Prefill: 0ms | Decode: 0 t/s | Mem: 0MB")
+        self.lbl_metrics = QLabel("Text: -- | Image: -- | Pos: -- | Prefill: -- | Decode: -- | Mem: --")
         self.lbl_metrics.setStyleSheet("color: #cbd5e1;")
         status_layout.addWidget(self.lbl_metrics)
         
-        self.lbl_egress = QLabel("External AI egress: <span style='color: #ef4444;'>DISABLED</span><br/>Network retrieval: <span style='color: #ef4444;'>DISABLED</span>")
+        self.lbl_egress = QLabel()
+        self.lbl_egress.setStyleSheet("color: #cbd5e1;")
         status_layout.addWidget(self.lbl_egress)
         
         main_layout.addWidget(self.status_panel)
+
+        credential_row = QHBoxLayout()
+        self.txt_vertex_key = QLineEdit()
+        self.txt_vertex_key.setEchoMode(QLineEdit.Password)
+        self.txt_vertex_key.setPlaceholderText("Vertex express-mode API key for this session")
+        self.btn_vertex_key = QPushButton("Use key")
+        self.btn_vertex_key.clicked.connect(self._apply_vertex_key)
+        credential_row.addWidget(self.txt_vertex_key)
+        credential_row.addWidget(self.btn_vertex_key)
+        main_layout.addLayout(credential_row)
         
         # Splitter for main content
         splitter = QSplitter(Qt.Horizontal)
@@ -215,6 +266,7 @@ class LocalResearchWorkspace(QWidget):
         self.answer_panel = QGroupBox("SCIENTIFIC ANSWER")
         ans_layout = QVBoxLayout(self.answer_panel)
         self.lbl_answer = QLabel("Awaiting query...")
+        self.lbl_answer.setTextFormat(Qt.PlainText)
         self.lbl_answer.setWordWrap(True)
         ans_layout.addWidget(self.lbl_answer)
         self.lbl_tags = QLabel("")
@@ -248,19 +300,51 @@ class LocalResearchWorkspace(QWidget):
         self.txt_prompt.returnPressed.connect(self._on_send)
         self.btn_send = QPushButton("Send")
         self.btn_send.clicked.connect(self._on_send)
+        self.btn_research = QPushButton("Research next step")
+        self.btn_research.setToolTip("Review project evidence and propose a falsifiable next study")
+        self.btn_research.clicked.connect(self._on_research)
         prompt_layout.addWidget(self.txt_prompt)
+        prompt_layout.addWidget(self.btn_research)
         prompt_layout.addWidget(self.btn_send)
         right_layout.addLayout(prompt_layout)
         
         splitter.addWidget(right_widget)
         splitter.setSizes([600, 800])
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(splitter, 1)
         
         self.pending_episode = None
         self.pending_tool_name = None
         self.pending_tool_args = None
         
         self.mock_proj = {}
+        self._vertex_verified = False
+        self._refresh_vertex_status()
+
+    def _refresh_vertex_status(self):
+        configured = bool(os.environ.get("VIRTUALLAB_VERTEX_API_KEY") or os.environ.get("GOOGLE_CLOUD_PROJECT"))
+        if self._vertex_verified:
+            status = "Vertex AI: live request succeeded"
+        elif configured:
+            status = "Vertex AI: configured; verify with a request"
+        else:
+            status = "Vertex AI: credential required"
+        self.lbl_egress.setText(status)
+        self.btn_send.setEnabled(configured)
+        self.btn_research.setEnabled(configured)
+
+    def _apply_vertex_key(self):
+        key = self.txt_vertex_key.text().strip()
+        if not key:
+            return
+        if self.agent_thread is not None and self.agent_thread.isRunning():
+            self.lbl_egress.setText("Wait for the current request before changing the key")
+            return
+        os.environ["VIRTUALLAB_VERTEX_API_KEY"] = key
+        if self.agent_runtime is not None:
+            self.agent_runtime.reset_runner()
+        self.txt_vertex_key.clear()
+        self._vertex_verified = False
+        self._refresh_vertex_status()
 
     def set_hview(self, proj_dict: dict, memory_info: str):
         self.mock_proj = proj_dict
@@ -269,7 +353,13 @@ class LocalResearchWorkspace(QWidget):
 
     def _on_send(self):
         prompt = self.txt_prompt.toPlainText().strip()
-        if not prompt or not self.controller: return
+        if not prompt or not self.controller:
+            return
+        if self.agent_thread is not None and self.agent_thread.isRunning():
+            return
+        if not self.btn_send.isEnabled():
+            self.lbl_answer.setText("Configure Vertex AI before sending a request.")
+            return
         
         self.txt_prompt.clear()
         self.lst_trace.clear()
@@ -279,6 +369,25 @@ class LocalResearchWorkspace(QWidget):
         
         self.lst_trace.addItem("SYSTEM: Assembling context...")
         
+        self._start_worker(prompt)
+
+    def _on_research(self):
+        if not self.btn_research.isEnabled() or not self.controller:
+            return
+        if self.agent_thread is not None and self.agent_thread.isRunning():
+            return
+        from virtual_lab.ai.research_brief import build_research_prompt
+        from virtual_lab.gui.services.evidence_store import EvidenceStore
+
+        objective = self.txt_prompt.toPlainText().strip() or "Identify the most informative next step for the RHO P23H disease model."
+        evidence = EvidenceStore().records
+        prompt = build_research_prompt(objective, evidence)
+        self.txt_prompt.clear()
+        self.lst_trace.clear()
+        self.lbl_answer.clear()
+        self.lbl_tags.clear()
+        self.approval_panel.hide()
+        self.lst_trace.addItem(f"SYSTEM: Reviewing {len(evidence)} catalog claims; external sources require verification...")
         self._start_worker(prompt)
 
     def shutdown_agent_runtime(self):
@@ -306,10 +415,27 @@ class LocalResearchWorkspace(QWidget):
             
         self.shutdown_agent_runtime()
             
-        auth_records = [{"store_kind": "EXPERIMENT", "entity_type": "PREDICTION", "entity_id": "yc-001", "epistemic_state": "SIMULATED"}]
+        active_exp = self.workspace_state.active_experiment
+        experiment_id = active_exp.id if active_exp else "unscoped_research"
+        auth_records = []
+        if prompt and self.prediction_ledger is not None:
+            from virtual_lab.computational.context import prediction_context
+            from virtual_lab.domain.experiment_store import ExperimentStore
+            store = None
+            try:
+                store = ExperimentStore()
+                context = prediction_context(self.prediction_ledger, store, active_exp.id if active_exp else "")
+                prompt += context
+                if context:
+                    self.lst_trace.addItem("SYSTEM: Added verified computational prediction summaries to the Vertex context.")
+            except Exception:
+                self.lst_trace.addItem("SYSTEM: Computational evidence could not be verified; it was excluded from this request.")
+            finally:
+                if store is not None:
+                    store.close()
         
         self.agent_worker = AgentRuntimeWorker(
-            self.controller, "EXP-42", "HVIEW Summary", auth_records, 1, self.mock_proj
+            self.controller, experiment_id, "HVIEW Summary", auth_records, 1, self.mock_proj, agent_runtime=self.agent_runtime
         )
         self.agent_thread = QThread(self)
         self.agent_worker.moveToThread(self.agent_thread)
@@ -342,7 +468,7 @@ class LocalResearchWorkspace(QWidget):
         
         auth_records = [{"store_kind": "EXPERIMENT", "entity_type": "PREDICTION", "entity_id": "yc-001", "epistemic_state": "SIMULATED"}]
         self.agent_worker = AgentRuntimeWorker(
-            self.controller, "EXP-42", "HVIEW Summary", auth_records, 1, self.mock_proj
+            self.controller, (self.workspace_state.active_experiment.id if self.workspace_state.active_experiment else "unscoped_research"), "HVIEW Summary", [], 1, self.mock_proj, agent_runtime=self.agent_runtime
         )
         self.agent_thread = QThread(self)
         self.agent_worker.moveToThread(self.agent_thread)
@@ -401,7 +527,11 @@ class LocalResearchWorkspace(QWidget):
 
     @Slot(str, list)
     def _on_answer(self, text, tags):
+        if text and not self.lbl_answer.text().strip():
+            self.lbl_answer.setText(text)
         self.lbl_tags.setText(" ".join([f"[{t}]" for t in tags]))
+        self._vertex_verified = True
+        self._refresh_vertex_status()
         
     @Slot(str)
     def _on_stream_delta(self, delta):
@@ -419,7 +549,15 @@ class LocalResearchWorkspace(QWidget):
         
     @Slot(str)
     def _on_error(self, err):
-        self.lbl_answer.setText(f"<span style='color:#ef4444;'>Error: {err}</span>")
+        if "429" in err and "RESOURCE_EXHAUSTED" in err:
+            self.lbl_answer.setText(
+                "Vertex AI quota or capacity was exhausted during this research episode. "
+                "No research brief was completed. Try again when Vertex capacity is available."
+            )
+        else:
+            self.lbl_answer.setText(f"Error: {err}")
+        self._vertex_verified = False
+        self._refresh_vertex_status()
 
     def _on_approve(self):
         # We synthesize a decision result

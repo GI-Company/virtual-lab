@@ -7,7 +7,6 @@ from virtual_lab.gui.shell.system_monitor import SystemMonitorWidget
 from virtual_lab.gui.world.world_view import WorldWorkspace
 from virtual_lab.gui.experiments.experiment_workspace import ExperimentWorkspace
 from virtual_lab.gui.analysis.analysis_workspace import AnalysisWorkspace
-from virtual_lab.gui.ai.workbench import AIWorkbench
 from virtual_lab.gui.ai.local_research_workspace import LocalResearchWorkspace
 from virtual_lab.gui.evidence.evidence_workspace import EvidenceWorkspace
 from virtual_lab.gui.provenance.provenance_workspace import ProvenanceWorkspace
@@ -16,6 +15,7 @@ from virtual_lab.gui.compare.compare_workspace import CompareWorkspace
 from virtual_lab.gui.services.evidence_store import EvidenceStore
 from virtual_lab.gui.services.mapping import StructureMappingService
 from virtual_lab.core.runtime import create_virtual_lab_runtime
+
 
 class VirtualLabApplication(QMainWindow):
     def __init__(self):
@@ -45,6 +45,7 @@ class VirtualLabApplication(QMainWindow):
         print(f"context_assembler_id: {id(self.runtime.context_assembler)}")
         print("---------------------------\n")
         
+
         # Central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -100,11 +101,13 @@ class VirtualLabApplication(QMainWindow):
         self.world = WorldWorkspace(self.workspace, self.evidence_store, self.mapping_service)
         self.experiment = ExperimentWorkspace(self.workspace)
         self.analysis = AnalysisWorkspace(self.workspace)
-        self.local_research = LocalResearchWorkspace(self.workspace)
+        self.local_research = LocalResearchWorkspace(self.workspace, agent_runtime=self.runtime.agent_runtime, prediction_ledger=self.ledger)
         from virtual_lab.gui.instruments.workspace import InstrumentsWorkspace
-        self.instruments = InstrumentsWorkspace(self.workspace, ledger=self.ledger)
+        self.instruments = InstrumentsWorkspace(self.workspace, gateway=self.runtime.gateway, ledger=self.ledger)
+        from virtual_lab.gui.computational_workspace import ComputationalWorkspace
+        self.computational = ComputationalWorkspace(self.workspace, ledger=self.ledger)
         self.evidence = EvidenceWorkspace(self.workspace)
-        self.provenance = ProvenanceWorkspace(self.workspace)
+        self.provenance = ProvenanceWorkspace(self.workspace, ledger=self.ledger)
         self.numerical = NumericalWorkspace(self.workspace)
         self.compare = CompareWorkspace(self.workspace)
         
@@ -113,6 +116,7 @@ class VirtualLabApplication(QMainWindow):
         self.tabs.addTab(self.analysis, "Analysis")
         self.tabs.addTab(self.local_research, "Local Research Mode")
         self.tabs.addTab(self.instruments, "Instruments")
+        self.tabs.addTab(self.computational, "Computational Biology")
         self.tabs.addTab(self.evidence, "Evidence")
         self.tabs.addTab(self.provenance, "Provenance")
         self.tabs.addTab(self.numerical, "Numerical")
@@ -121,9 +125,8 @@ class VirtualLabApplication(QMainWindow):
         # Setup LocalResearchWorkspace backend wiring
         self.local_research.controller = self.runtime.agent_controller
         
-        if not self.runtime.gemma_backend:
-            self.local_research.lbl_answer.setText("<span style='color:red;'>BACKEND OFFLINE</span>")
-            self.local_research.lbl_mem_info.setText("NO ACTIVE HVIEW")
+        # LocalResearchWorkspace reports whether Vertex credentials are configured.
+
             
         self.workspace.evidenceSelectionChanged.connect(lambda _: self.tabs.setCurrentWidget(self.evidence))
         self.workspace.resultChanged.connect(self._refresh_status)
@@ -146,6 +149,11 @@ class VirtualLabApplication(QMainWindow):
             self.ledger_status.setToolTip(str(exc))
 
     def closeEvent(self,event):
+        if self.computational.busy:
+            self.computational.cancel()
+            self.computational.status.setText("Cancelling computational run; close again when cancellation completes.")
+            event.ignore()
+            return
         if self.experiment.controller.worker is not None:
             self.experiment.controller.cancel()
             self.experiment.status.setText("Cancelling active run; close again when cancellation completes.")

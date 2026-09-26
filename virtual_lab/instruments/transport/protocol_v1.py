@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Union, Literal, Tuple
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 
 # Core Protocol Models
 
@@ -171,3 +172,76 @@ class ScientificFrameAck(BaseModel):
     status: Literal["COMMITTED", "REJECTED"]
     artifact_sha256: Optional[str] = None
     error_message: Optional[str] = None
+
+class ArtifactRegister(BaseModel):
+    message_type: Literal["ARTIFACT_REGISTER"] = "ARTIFACT_REGISTER"
+    schema_version: str = "1"
+    device_id: str
+    measurement_id: str
+    artifact_id: str
+    correlation_id: str
+    edge_artifact_ref: str
+    edge_sha256: str
+    size_bytes: int
+    payload_base64: str
+
+    @field_validator("artifact_id", "measurement_id", "device_id", "correlation_id")
+    @classmethod
+    def validate_identifiers(cls, v):
+        if not re.match(r"^[A-Za-z0-9_-]+$", v):
+            raise ValueError(f"Invalid identifier format: {v}")
+        return v
+        
+    @field_validator("edge_sha256")
+    @classmethod
+    def validate_sha256(cls, v):
+        if not re.match(r"^[a-fA-F0-9]{64}$", v):
+            raise ValueError("edge_sha256 must be exactly 64 hexadecimal characters")
+        return v.lower()
+        
+    @field_validator("size_bytes")
+    @classmethod
+    def validate_size(cls, v):
+        MAX_ARTIFACT_BYTES = 10 * 1024 * 1024  # 10 MB limit for wifi_scan
+        if not (0 < v <= MAX_ARTIFACT_BYTES):
+            raise ValueError(f"Invalid size_bytes: {v}. Must be between 1 and {MAX_ARTIFACT_BYTES}")
+        return v
+
+class LedgerRegistered(BaseModel):
+    message_type: Literal["LEDGER_REGISTERED"] = "LEDGER_REGISTERED"
+    schema_version: str = "1"
+    device_id: str
+    measurement_id: str
+    artifact_id: str
+    correlation_id: str
+    artifact_sha256: str
+    vlab_artifact_ref: str
+    ledger_event_id: str
+    ledger_event_hash: str
+    registered_at_utc: str
+
+    @field_validator("vlab_artifact_ref")
+    @classmethod
+    def validate_vlab_ref(cls, v):
+        if not v.startswith("vlab://artifacts/"):
+            raise ValueError(f"Invalid vlab_artifact_ref format: {v}")
+        return v
+    
+    @field_validator("ledger_event_hash")
+    @classmethod
+    def validate_ledger_hash(cls, v):
+        import re
+        if not re.match(r"^[a-fA-F0-9]{64}$", v):
+            raise ValueError("ledger_event_hash must be exactly 64 hexadecimal characters")
+        return v.lower()
+
+class LedgerRejected(BaseModel):
+    message_type: Literal["LEDGER_REJECTED"] = "LEDGER_REJECTED"
+    schema_version: str = "1"
+    device_id: str
+    measurement_id: str
+    artifact_id: str
+    correlation_id: str
+    claimed_artifact_sha256: Optional[str] = None
+    reason: str
+    error_message: str

@@ -37,25 +37,16 @@ class AdbDiscoveryRunner(QRunnable):
 class AdbReverseRunner(QRunnable):
     def __init__(self, serial):
         super().__init__()
-        self.signals = AdbSignals()
-        
-class AdbDisconnectRunner(QRunnable):
-    def __init__(self, serial):
-        super().__init__()
         self.serial = serial
         self.signals = AdbSignals()
         
     def run(self):
         try:
-            subprocess.run(["adb", "-s", self.serial, "reverse", "--remove", "tcp:8765"], capture_output=True, timeout=3)
-            self.signals.reverse_verified.emit(self.serial, True, "removed")
-        except Exception as e:
-            self.signals.reverse_verified.emit(self.serial, False, str(e))
-        
-    def run(self):
-        try:
             # Execute reverse
-            subprocess.run(["adb", "-s", self.serial, "reverse", "tcp:8765", "tcp:8765"], capture_output=True, text=True, timeout=5)
+            reverse = subprocess.run(["adb", "-s", self.serial, "reverse", "tcp:8765", "tcp:8765"], capture_output=True, text=True, timeout=5)
+            if reverse.returncode != 0:
+                self.signals.reverse_verified.emit(self.serial, False, reverse.stderr.strip())
+                return
             # Verify
             list_res = subprocess.run(["adb", "-s", self.serial, "reverse", "--list"], capture_output=True, text=True, timeout=5)
             
@@ -72,20 +63,8 @@ class AdbDisconnectRunner(QRunnable):
 class AdbLaunchRunner(QRunnable):
     def __init__(self, serial):
         super().__init__()
-        self.signals = AdbSignals()
-        
-class AdbDisconnectRunner(QRunnable):
-    def __init__(self, serial):
-        super().__init__()
         self.serial = serial
         self.signals = AdbSignals()
-        
-    def run(self):
-        try:
-            subprocess.run(["adb", "-s", self.serial, "reverse", "--remove", "tcp:8765"], capture_output=True, timeout=3)
-            self.signals.reverse_verified.emit(self.serial, True, "removed")
-        except Exception as e:
-            self.signals.reverse_verified.emit(self.serial, False, str(e))
         
     def run(self):
         pkg = "com.aistudio.sensornode.vlsnxz"
@@ -146,6 +125,19 @@ class AdbDisconnectRunner(QRunnable):
             res_info["stderr"] = str(e)
             
         self.signals.launch_completed.emit(res_info)
+
+class AdbDisconnectRunner(QRunnable):
+    def __init__(self, serial):
+        super().__init__()
+        self.serial = serial
+        self.signals = AdbSignals()
+
+    def run(self):
+        try:
+            result = subprocess.run(["adb", "-s", self.serial, "reverse", "--remove", "tcp:8765"], capture_output=True, text=True, timeout=3)
+            self.signals.reverse_verified.emit(self.serial, result.returncode == 0, result.stderr.strip() or "removed")
+        except Exception as e:
+            self.signals.reverse_verified.emit(self.serial, False, str(e))
 from virtual_lab.instruments.transport.gateway import InstrumentGateway
 from virtual_lab.instruments.transport.discovery import InstrumentDiscoveryService, DiscoveryStatus
 from virtual_lab.instruments.storage import JsonlMeasurementStore
@@ -178,11 +170,12 @@ class SensorStreamState:
         return len(t_recent) / dt
 
 class InstrumentsWorkspace(QWidget):
-    def __init__(self, workspace, parent=None, ledger=None):
+    def __init__(self, workspace, gateway, parent=None, ledger=None):
         super().__init__(parent)
         self.workspace = workspace
         self.ledger = ledger
-        self.gateway = InstrumentGateway(port=8765, parent=self)
+        self.gateway = gateway
+        self.gateway.setParent(self)
         self.discovery = InstrumentDiscoveryService(port=8765)
         self.store = JsonlMeasurementStore()
         
@@ -248,11 +241,11 @@ class InstrumentsWorkspace(QWidget):
         # --- CONNECTION TAB ---
         conn_layout = QVBoxLayout(self.tab_conn)
         
-        self.lbl_gateway_info = QLabel("Gateway Disabled")
+        self.lbl_gateway_info = QLabel("Checking gateway status...")
         self.lbl_gateway_info.setStyleSheet("font-family: monospace; color: #94a3b8;")
         conn_layout.addWidget(self.lbl_gateway_info)
         
-        self.btn_gateway = QPushButton("Enable Instrument Gateway")
+        self.btn_gateway = QPushButton("Enable LAN Discovery")
         self.btn_gateway.clicked.connect(self._toggle_gateway)
         conn_layout.addWidget(self.btn_gateway)
         
@@ -446,6 +439,14 @@ class InstrumentsWorkspace(QWidget):
         self.gateway.measurementReceived.connect(self._on_measurement)
         self.gateway.binaryMessageReceived.connect(self._on_binary_message)
         self.gateway.channelDisconnected.connect(self._on_channel_disconnected)
+        self.gateway.artifactRegistrationReceived.connect(self._on_artifact_registration)
+        self._update_diagnostics_ui()
+        self._update_ui()
+
+    def _on_artifact_registration(self, reg):
+        # Artifact Registration is now handled directly by the Gateway
+        # using ArtifactRegistrationService.
+        pass
 
     def _on_channel_disconnected(self, device_id, channel_type, conn_id, generation):
         dev = self.gateway.registry.devices.get(device_id)
@@ -504,22 +505,16 @@ class InstrumentsWorkspace(QWidget):
             pass
 
     def _toggle_gateway(self):
-        if self.instrument_state == "DISCONNECTED":
-            if self.gateway.start():
-                self.instrument_state = "LISTENING"
-                self.btn_gateway.setText("Disable Instrument Gateway")
-                self.lbl_status.setText("● LISTENING ON 8765")
-                self.lbl_status.setStyleSheet("font-weight: bold; color: #f59e0b;")
-                self.discovery.start()
-                self._update_diagnostics_ui()
-            else:
-                self.lbl_gateway_info.setText("Gateway Start Failed: Could not bind to port 8765.")
+        if self.discovery.status() in (DiscoveryStatus.STOPPED, DiscoveryStatus.FAILED):
+            self.discovery.start()
+            self.btn_gateway.setText(
+                "Disable LAN Discovery" if self.discovery.status() == DiscoveryStatus.ADVERTISING
+                else "Enable LAN Discovery"
+            )
         else:
             self.discovery.stop()
-            self.gateway.stop()
-            self.btn_gateway.setText("Enable Instrument Gateway")
-            self.lbl_gateway_info.setText("Gateway Disabled")
-            self._set_disconnected_state()
+            self.btn_gateway.setText("Enable LAN Discovery")
+        self._update_diagnostics_ui()
 
     def _update_diagnostics_ui(self):
         d_status = self.discovery.status()
@@ -529,9 +524,9 @@ class InstrumentsWorkspace(QWidget):
         
         info = (
             f"INSTRUMENT GATEWAY\n\n"
-            f"WebSocket\n● LISTENING\n\n"
+            f"WebSocket\n● {'LISTENING' if self.gateway.server.isListening() else 'OFFLINE'}\n\n"
             f"Bind\n0.0.0.0:8765\n\n"
-            f"Sensor path\n/sensors\n\n"
+            f"Channels\n/sensors  /control  /camera\n\n"
             f"Discovery\n● {d_status.value}\n\n"
             f"Service\n{svc_name}\n\n"
             f"mDNS type\n_virtuallab._tcp.local.\n\n"
@@ -924,13 +919,11 @@ class InstrumentsWorkspace(QWidget):
                 self._set_disconnected_state()
             else:
                 self.lbl_status.setText(f"● {overall}")
-                if overall == "READY":
+                if overall == "FULLY_CONNECTED":
                     self.lbl_status.setStyleSheet("font-weight: bold; color: #3b82f6;")
-                elif overall == "ACQUIRING":
-                    self.lbl_status.setStyleSheet("font-weight: bold; color: #22c55e;")
-                elif overall == "DEGRADED":
+                elif overall == "ERROR":
                     self.lbl_status.setStyleSheet("font-weight: bold; color: #ef4444;")
-                elif overall == "PARTIAL":
+                elif overall == "PARTIALLY_CONNECTED":
                     self.lbl_status.setStyleSheet("font-weight: bold; color: #f59e0b;")
                 
                 # Check for 3/3

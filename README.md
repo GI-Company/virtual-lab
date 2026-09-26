@@ -1,5 +1,7 @@
 # VirtualLab: Epistemic Research Cockpit
 
+VirtualLab connects mechanistic simulations, physical instruments, AlphaGenome predictions, individual AlphaFold DB lookups, and Vertex AI research within one evidence and provenance model. AlphaFold access is on demand; no database mirror or local inference installation is required.
+
 [![Version](https://img.shields.io/badge/version-1.0.0--beta.1-blue.svg)](release_manifest.json)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
@@ -20,7 +22,7 @@ Unlike traditional computational notebooks or black-box ML platforms, VirtualLab
 ```
                      ┌───────────────────────────────────────────────┐
                      │          VirtualLab Research Cockpit          │
-                     │  (PySide6 Desktop Shell • 9 Workspaces)       │
+                     │  (PySide6 Desktop Shell • 10 Workspaces)      │
                      └──────┬───────────────────┬─────────────────┬──┘
                             │                   │                 │
              ┌──────────────┴──────┐  ┌─────────┴───────┐  ┌──────┴──────────────┐
@@ -88,21 +90,30 @@ $$\text{Hypothesis} \longrightarrow \text{Protocol} / \text{Prediction} \longrig
 - **ZeroConf / mDNS Discovery**: Automated discovery of laboratory hardware on local subnets.
 - **Mobile Edge Sensor Node**: Interoperability with `virtual-lab-mobile` (Android Kotlin client) over WiFi and USB/ADB for external sensor telemetry and camera capture.
 
+### 7. Computational Biology Instruments
+- **AlphaGenome**: Runs human hg38 interval, sequence, REF/ALT variant, variant-scoring, and bounded in-silico mutagenesis assays using the official remote API.
+- **Biological Context**: Restricts compatible predictions with standardized UBERON, Cell Ontology, or EFO identifiers rather than unstructured tissue labels.
+- **AlphaFold DB**: Retrieves metadata and, when explicitly selected, one protein's mmCIF structure and PAE confidence matrix by UniProt accession. Bulk database downloads are not implemented.
+- **Prediction Artifacts**: Stores validated inputs, model and client versions, track or score metadata, compressed numerical arrays, limitations, and SHA-256 digests in a verifiable run bundle.
+- **Epistemic Boundary**: AlphaGenome and AlphaFold results are recorded as `PREDICTED`, never as physical measurements. Reference structures do not establish mutant structural effects.
+- **Vertex Context**: Adds bounded summaries from ledger-verified computational runs to the existing Vertex research workflow. Altered or unanchored artifacts are excluded.
+
 ---
 
-## Desktop Cockpit: 9 Specialized Workspaces
+## Desktop Cockpit: 10 Specialized Workspaces
 
-The PySide6 graphical user interface provides 9 domain-specific workspaces:
+The PySide6 graphical user interface provides 10 domain-specific workspaces:
 
 1. **World**: Molecular topology, protein target interactions, structural coordinate mapping, and cellular compartment visualizations.
 2. **Experiment**: Parameter configuration, boundary conditions, drug exposure profiles, and intervention execution.
 3. **Analysis**: High-framerate interactive trajectory plots, phase-space portraits, and dose-response curves powered by PyQtGraph.
 4. **Local Research Mode**: Interactive AI workbench for autonomous hypothesis generation, context assembly inspection, and proposal review.
 5. **Instruments**: Device status, ZeroConf connection monitor, live camera streaming, optics controls, and exposure calibration.
-6. **Evidence**: Tabular repository of all physical observations, assay endpoints, and conflict-detection matrices.
-7. **Provenance**: Interactive visual audit of the Genesis Ledger hash chain, event tree, and cryptographic signatures.
-8. **Numerical**: Solver benchmarking, MLX Metal vs. NumPy/SciPy tolerance verification, and numerical certificates.
-9. **Compare**: Multi-run trajectory overlays, counterfactual simulations, and prediction-vs-observation residual analysis.
+6. **Computational Biology**: AlphaGenome assays, individual AlphaFold DB retrieval, saved prediction inspection, and experiment attachment or staging.
+7. **Evidence**: Tabular repository of physical observations, computational assays, assay endpoints, and conflict-detection matrices.
+8. **Provenance**: Interactive audit of the Genesis Ledger hash chain, event tree, computational artifacts, and cryptographic signatures.
+9. **Numerical**: Solver benchmarking, MLX Metal vs. NumPy/SciPy tolerance verification, and numerical certificates.
+10. **Compare**: Multi-run trajectory overlays, counterfactual simulations, and prediction-vs-observation residual analysis.
 
 ---
 
@@ -120,6 +131,7 @@ VirtualLab/
 │   ├── cli/                      # Command-line interface utilities
 │   │   └── verify.py             # Cryptographic .vlab bundle verifier
 │   ├── compute/                  # Compute backends (NumPy, SciPy, MLX abstraction)
+│   ├── computational/            # AlphaGenome/AlphaFold adapters, requests & artifacts
 │   ├── core/                     # Genesis ledger, canonical JSON, runtime, packaging
 │   │   ├── canonical.py          # RFC 8785 deterministic JSON serializer
 │   │   ├── ledger.py             # GenesisLedger with SQLite trigger-enforced hash chain
@@ -129,7 +141,7 @@ VirtualLab/
 │   │   └── rho_p23h/             # Rhodopsin P23H Retinitis Pigmentosa model
 │   ├── domain/                   # Epistemics (9 states), state machine DAG, experiment store
 │   ├── engines/                  # Metal GPU (MLX) & chemistry ODE solvers
-│   ├── gui/                      # PySide6 desktop application & 9 workspaces
+│   ├── gui/                      # PySide6 desktop application & 10 workspaces
 │   │   └── shell/                # Main window, theme, workspace manager, system monitor
 │   ├── instruments/              # Transport protocol v1, optics, camera, ZeroConf
 │   └── matter/                   # Elements, isotopes, molecules, units (pint)
@@ -177,6 +189,13 @@ pip install -e ".[cockpit,dev]"
 ```
 *(Or install via `pip install -r requirements-cockpit.txt`)*
 
+To enable AlphaGenome, install the computational biology dependencies as well:
+```bash
+pip install -e ".[cockpit,biology,dev]"
+```
+
+AlphaGenome credentials are saved from **Computational Biology → AlphaGenome** using the operating-system credential store. They are not written to source files, experiment manifests, or environment variables. AlphaFold DB metadata needs no API key.
+
 ### 4. Apple Silicon MLX Acceleration (Optional)
 On Apple Silicon macOS devices, install Apple MLX for Metal GPU hardware acceleration:
 ```bash
@@ -198,16 +217,45 @@ Or directly through Python:
 python3 -m virtual_lab.gui.shell.main_window
 ```
 
-### Configuring AI Backends
-VirtualLab operates completely offline with mock/rule-based reasoning. To enable advanced model backends:
+### Connecting SensorNode over USB
 
-- **Google Gemini Cloud API**:
-  Set your API key:
-  ```bash
-  export GEMINI_API_KEY="your-api-key-here"
-  ```
-- **Local Gemma 4 MLX (Apple Silicon)**:
-  Point the loader to your local MLX weights in `~/.lmstudio/models/` or a custom directory.
+Connect the phone with USB debugging enabled, then launch the desktop and use
+**Instruments → Discover USB Devices → Connect & Launch**. The desktop creates
+an `adb reverse` mapping for port 8765 and launches the Android package
+`com.aistudio.sensornode.vlsnxz`. The phone connects to `/sensors`, `/control`,
+and `/camera` on that port. A phone connecting directly to
+`ws://127.0.0.1:8765` requires the reverse mapping; check it with
+`adb reverse --list`. For Wi-Fi, use the desktop's LAN address and keep both
+devices on a network that permits TCP port 8765 and mDNS discovery.
+
+### Configuring Vertex AI
+
+The desktop agent uses Vertex AI. Choose one authentication mode before
+launching VirtualLab:
+
+For express mode, you can paste a key into **Local Research Mode → Vertex
+express-mode API key for this session → Use key**. The field is masked, clears
+after use, and keeps the key only in the running desktop process. Enter it
+again after restarting the app.
+
+```bash
+# Vertex AI express mode: set a newly issued Vertex express-mode API key.
+export VIRTUALLAB_VERTEX_API_KEY="<key>"
+./start_virtuallab.sh
+```
+
+```bash
+# Google Cloud Vertex AI: use Application Default Credentials.
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT="<project-id>"
+export GOOGLE_CLOUD_LOCATION="global"
+./start_virtuallab.sh
+```
+
+The default model is `gemini-3.5-flash`; override it with
+`VIRTUALLAB_VERTEX_MODEL` if needed. Keep keys in your shell or a secret
+manager, never in the repository or Android APK. Local Gemma 4 MLX weights
+can be configured separately under `~/.lmstudio/models/`.
 
 ---
 
@@ -290,3 +338,39 @@ When developing modules or extending VirtualLab:
 ## License
 
 VirtualLab is distributed under a research and scientific license. See [pyproject.toml](pyproject.toml) and repository governance files for full terms.
+
+## Virtual mass spectrometry (precursor isotope envelope)
+
+For an instrument-free, composition-based prediction, run:
+
+```bash
+python3 -m virtual_lab.matter.virtual_mass_spec C6H12O6 --charge 1
+```
+
+The JSON output reports centroid m/z, natural-abundance isotope probability,
+relative intensity, and probability omitted by the computation cutoff. The
+supported formula syntax is an unparenthesized combination of C, H, N, and O,
+with at most 200 atoms. Charges 1–5 model protonated `[M+zH]z+` ions. Output
+is always `SIMULATED` and deterministic. Isotope masses and representative
+abundances follow the [NIST isotope composition tables](https://pml.nist.gov/cgi-bin/Compositions/stand_alone.pl).
+Natural abundances are assumptions and vary among samples.
+
+This calculation predicts a precursor isotope envelope from a *known formula*.
+It cannot identify an unknown sample, establish purity, predict ionization or
+fragmentation, or replace experimental validation. A future virtual MS/MS
+capability requires independently validated fragmentation models and reference
+spectra; simulated peaks must remain separate from measured evidence.
+
+## Guided autonomous research in the desktop cockpit
+
+In **Local Research Mode**, enter a disease question and select **Research next
+step**. The Director receives up to 30 project evidence leads, delegates source
+checking to the Research Agent and claim review to the Integrity Agent, then
+requests competing falsifiable hypotheses, a discriminating simulation, and a
+physical validation study. A Vertex AI credential is required for this workflow.
+Catalog entries are leads; the agent must verify their links before using them
+as evidence. The workflow does not run instruments or establish clinical efficacy.
+
+The research brief is a single agent episode. It is not a continuous autonomous
+literature monitor, and its output still requires scientific review. Research
+sessions are scoped to the active experiment when one exists.

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 from pathlib import Path
 import os
+import uuid
 from virtual_lab.core.canonical import canonical_json
 
 class Actor(BaseModel):
@@ -178,6 +179,23 @@ class GenesisLedger:
             if evt.event_type == "AI_PROPOSAL":
                 return evt.payload
         return None
+
+    def find_artifact_registration(self, artifact_id: str) -> Optional[LedgerEvent]:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT * FROM ledger_events WHERE event_type = 'ARTIFACT_REGISTERED' AND json_extract(payload_json, '$.artifact_id') = ?",
+            (artifact_id,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return self._row_to_event(row)
+        return None
+
+    def append_artifact_registration(self, payload: Dict[str, Any]) -> str:
+        self.verify_chain() # verify before appending
+        actor = Actor(type="INSTRUMENT", id=payload.get("device_id", "unknown"))
+        event_id = f"evt_{uuid.uuid4().hex}"
+        return self.append(event_id, actor, "ARTIFACT_REGISTERED", payload)
 
     def verify_chain(self):
         cursor = self.conn.cursor()

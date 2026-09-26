@@ -26,10 +26,10 @@ class ControlChannelState(Enum):
 
 class InstrumentState(Enum):
     DISCONNECTED = "DISCONNECTED"
-    PARTIAL = "PARTIAL"
-    READY = "READY"
-    ACQUIRING = "ACQUIRING"
-    DEGRADED = "DEGRADED"
+    DISCOVERABLE_ONLY = "DISCOVERABLE_ONLY"
+    PARTIALLY_CONNECTED = "PARTIALLY_CONNECTED"
+    FULLY_CONNECTED = "FULLY_CONNECTED"
+    ERROR = "ERROR"
 
 @dataclass
 class ChannelConnectionState:
@@ -71,30 +71,18 @@ class DeviceConnectionState:
         has_all = s_ok and c_ok and ctl_ok
         
         if not has_any:
+            # We don't track DISCOVERABLE_ONLY here since this is only populated upon connection.
             return InstrumentState.DISCONNECTED
             
-        # Determine if acquiring
-        acquiring = False
-        if self.sensors and self.sensors.state == SensorChannelState.STREAMING:
-            acquiring = True
-        if self.camera and self.camera.state == CameraChannelState.STREAMING:
-            acquiring = True
-            
-        # Check for DEGRADED first
         if (self.sensors and self.sensors.state == SensorChannelState.FAILED) or \
            (self.camera and self.camera.state == CameraChannelState.FAILED) or \
            (self.control and self.control.state == ControlChannelState.FAILED):
-            return InstrumentState.DEGRADED
-            
-        # Then check ACQUIRING
-        if acquiring:
-            return InstrumentState.ACQUIRING
+            return InstrumentState.ERROR
             
         if has_all:
-            return InstrumentState.READY
+            return InstrumentState.FULLY_CONNECTED
             
-        # Not all connected, but some are (and not acquiring, and not degraded)
-        return InstrumentState.PARTIAL
+        return InstrumentState.PARTIALLY_CONNECTED
 
 class ConnectionRegistry:
     def __init__(self):

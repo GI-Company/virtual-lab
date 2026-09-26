@@ -10,6 +10,8 @@ from virtual_lab.instruments.transport.packet_parser import PacketDecoder, Camer
 from virtual_lab.instruments.transport.control_parser import ControlMessageDecoder
 from virtual_lab.instruments.connection import ConnectionRegistry, ChannelConnectionState, SensorChannelState, CameraChannelState, ControlChannelState
 from virtual_lab.instruments.optics import generate_id
+from virtual_lab.core.ledger import GenesisLedger
+from virtual_lab.core.artifact_registration import ArtifactRegistrationService
 
 logger = logging.getLogger("virtuallab.gateway")
 if not logger.handlers:
@@ -32,11 +34,15 @@ class InstrumentGateway(QObject):
     binaryMessageReceived = Signal(object)
     controlMessageReceived = Signal(object)
     controlCapabilityReceived = Signal(object)
+    acquisitionStatusReceived = Signal(object)
+    artifactRegistrationReceived = Signal(object)
     gatewayError = Signal(str)
 
-    def __init__(self, port=8765, parent=None):
+    def __init__(self, ledger: GenesisLedger, port=8765, parent=None):
         super().__init__(parent)
         self.port = port
+        self.ledger = ledger
+        self.registration_service = ArtifactRegistrationService(self.ledger)
         self.server = QWebSocketServer("VirtualLab Instrument Gateway", QWebSocketServer.NonSecureMode, self)
         self.server.newConnection.connect(self._on_new_connection)
         
@@ -250,7 +256,18 @@ class InstrumentGateway(QObject):
             self._try_parse_hello("/control", conn_id, raw)
             return
             
-        if msg_type not in ("CAMERA_CAPABILITIES", "CAMERA_CONTROL_RESULT", "CAMERA_STATE", "SCIENTIFIC_CAPTURE_RESULT", "INSTRUMENT_DESCRIPTOR"):
+        acquisition_messages = (
+            "MEASUREMENT_STATUS", "MEASUREMENT_COMPLETED", "MEASUREMENT_FAILED",
+            "MEASUREMENT_REJECTED", "MEASUREMENT_CANCELLED",
+        )
+        if msg_type in acquisition_messages:
+            try:
+                self.acquisitionStatusReceived.emit(json.loads(raw))
+            except json.JSONDecodeError as exc:
+                self.gatewayError.emit(f"Invalid acquisition status: {exc}")
+            return
+
+        if msg_type not in ("CAMERA_CAPABILITIES", "CAMERA_CONTROL_RESULT", "CAMERA_STATE", "SCIENTIFIC_CAPTURE_RESULT", "INSTRUMENT_DESCRIPTOR", "ARTIFACT_REGISTER"):
             logger.error("[%s][CONTROL] Protocol error: Unexpected message_type %s on /control", conn_id, msg_type)
             return
             
@@ -269,28 +286,59 @@ class InstrumentGateway(QObject):
             self.controlCapabilityReceived.emit(result["capabilities"])
         elif result["type"] == "CONTROL_RESULT":
             self.controlMessageReceived.emit(result["result"])
+        elif result["type"] == "ARTIFACT_REGISTER":
+            # Handle directly in the gateway instead of emitting
+            registration = result["registration"]
+            dev_id = conn.bound_device_id if conn else registration.device_id
+            response_json = self.registration_service.handle_registration(registration, dev_id)
+            socket.sendTextMessage(response_json)
 
     def _on_disconnect(self, socket, path, conn_id):
+        import shiboken6
+        
         c_type = path.strip("/").upper()
         
         conn = self.registry.get_connection(conn_id)
+        if not conn:
+            # Already removed
+            return
+            
         dev_id = conn.bound_device_id if conn else "UNBOUND"
         gen = conn.generation if conn else 0
         logger.info("[%s][%s][%s] disconnected", c_type, dev_id, conn_id)
-        try:
-            self.channelDisconnected.emit(dev_id, c_type, conn_id, gen)
-        except RuntimeError:
-            pass
+        
+        current_dev = self.registry.devices.get(dev_id)
+        is_stale = False
+        if current_dev:
+            if c_type == "SENSORS" and current_dev.sensors and current_dev.sensors.connection_id != conn_id:
+                is_stale = True
+            elif c_type == "CAMERA" and current_dev.camera and current_dev.camera.connection_id != conn_id:
+                is_stale = True
+            elif c_type == "CONTROL" and current_dev.control and current_dev.control.connection_id != conn_id:
+                is_stale = True
+                
+        if is_stale:
+            logger.info("[%s][%s][%s] stale disconnect ignored", c_type, dev_id, conn_id)
+        else:
+            try:
+                self.channelDisconnected.emit(dev_id, c_type, conn_id, gen)
+            except RuntimeError:
+                pass
+                
         self.registry.remove_connection(conn_id)
         
-        if path == "/sensors" and socket in self.sensor_clients:
-            self.sensor_clients.remove(socket)
-        elif path == "/camera" and socket in self.camera_clients:
-            self.camera_clients.remove(socket)
-        elif path == "/control" and socket in self.control_clients:
-            self.control_clients.remove(socket)
-            
-        socket.deleteLater()
+        if shiboken6.isValid(socket):
+            if path == "/sensors" and socket in self.sensor_clients:
+                self.sensor_clients.remove(socket)
+            elif path == "/camera" and socket in self.camera_clients:
+                self.camera_clients.remove(socket)
+            elif path == "/control" and socket in self.control_clients:
+                self.control_clients.remove(socket)
+                
+            try:
+                socket.deleteLater()
+            except RuntimeError:
+                pass
         
         if dev_id != "UNBOUND":
             dev_state = self.registry.devices.get(dev_id)

@@ -88,6 +88,10 @@ class SystemMonitorWidget(QWidget):
 
     def _update_metal(self):
         """Read MLX Metal active + cache memory and total unified memory."""
+        import os
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen" or os.environ.get("VIRTUALLAB_DISABLE_MLX") == "1":
+            self._val_gpu.setText("unavailable")
+            return
         try:
             import mlx.core as mx
             active  = mx.get_active_memory()

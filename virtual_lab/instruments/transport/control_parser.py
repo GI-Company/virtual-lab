@@ -40,6 +40,10 @@ class ControlMessageDecoder:
             elif msg_type == "INSTRUMENT_DESCRIPTOR":
                 desc = InstrumentDescriptor.model_validate(data)
                 result = {"type": "INSTRUMENT_DESCRIPTOR", "descriptor": desc}
+            elif msg_type == "ARTIFACT_REGISTER":
+                from virtual_lab.instruments.transport.protocol_v1 import ArtifactRegister
+                reg = ArtifactRegister.model_validate(data)
+                result = {"type": "ARTIFACT_REGISTER", "registration": reg}
             else:
                 # We can handle more types if needed, but these are the main ones Desktop receives.
                 # Just return raw dict for unknown types so gateway can inspect if necessary.

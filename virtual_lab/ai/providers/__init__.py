@@ -12,7 +12,13 @@ themselves unavailable via UnavailableProvider. They will:
 Never silently return a fake success.
 """
 from .gemini import GeminiProvider
-from .mlx_local import MLXLocalProvider
+
+
+def _create_mlx_provider():
+    # Import only when selected. Importing mlx.core can abort a headless process
+    # before Python can catch an exception.
+    from .mlx_local import MLXLocalProvider
+    return MLXLocalProvider()
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -58,7 +64,7 @@ class UnavailableProvider:
 
 PROVIDER_REGISTRY = {
     "gemini":    GeminiProvider,
-    "mlx_local": MLXLocalProvider,
+    "mlx_local": _create_mlx_provider,
     "openai":    lambda: UnavailableProvider("openai",     "OpenAI"),
     "anthropic": lambda: UnavailableProvider("anthropic",  "Anthropic"),
     "groq":      lambda: UnavailableProvider("groq",       "Groq"),
