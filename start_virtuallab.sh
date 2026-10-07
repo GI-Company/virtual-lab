@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# VirtualLab macOS Launcher Script (v1.0.0-beta.1-rc1)
+# VirtualLab macOS launcher
 
 # Ensure we're in the correct directory (the repository root)
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

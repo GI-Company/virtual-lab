@@ -15,12 +15,13 @@ from virtual_lab.gui.compare.compare_workspace import CompareWorkspace
 from virtual_lab.gui.services.evidence_store import EvidenceStore
 from virtual_lab.gui.services.mapping import StructureMappingService
 from virtual_lab.core.runtime import create_virtual_lab_runtime
+from virtual_lab.version import __version__
 
 
 class VirtualLabApplication(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("VirtualLab v1.0.0-beta.1 - Scientific Cockpit")
+        self.setWindowTitle(f"VirtualLab v{__version__} - Scientific Cockpit")
         self.resize(1600, 1000)
         self.setMinimumSize(1200, 800)
         self.setMaximumSize(1800, 1200)

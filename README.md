@@ -3,7 +3,7 @@
 VirtualLab connects mechanistic simulations, physical instruments, AlphaGenome predictions, individual AlphaFold DB lookups, and Vertex AI research within one evidence and provenance model. AlphaFold access is on demand; no database mirror or local inference installation is required.
 
 [![Version](https://img.shields.io/badge/version-1.0.0--beta.1-blue.svg)](release_manifest.json)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
 [![Hardware Acceleration](https://img.shields.io/badge/compute-Apple%20Silicon%20Metal%20%2F%20MLX-purple.svg)]()
 [![Integrity](https://img.shields.io/badge/provenance-cryptographic%20genesis%20ledger-green.svg)]()
@@ -13,7 +13,7 @@ VirtualLab connects mechanistic simulations, physical instruments, AlphaGenome p
 
 **VirtualLab** is a high-performance scientific workstation and epistemic research cockpit designed for mechanism-first biological discovery, multi-scale biophysical simulation, and cryptographically verifiable experimental reasoning.
 
-Unlike traditional computational notebooks or black-box ML platforms, VirtualLab enforces **strict epistemic classification**, an **event-sourced causal DAG**, and a **tamper-evident cryptographic ledger**. Every hypothesis, protocol parameter, numerical simulation run, instrument measurement, and scientific decision is permanently captured in a verifiable provenance chain.
+Unlike traditional computational notebooks or black-box ML platforms, VirtualLab enforces **strict epistemic classification**, an **event-sourced causal DAG**, and a **tamper-evident cryptographic ledger**. Recorded experiments and evidence can be linked to a verifiable provenance chain; the source and epistemic status of each result remain explicit.
 
 ---
 
@@ -22,7 +22,7 @@ Unlike traditional computational notebooks or black-box ML platforms, VirtualLab
 ```
                      ┌───────────────────────────────────────────────┐
                      │          VirtualLab Research Cockpit          │
-                     │  (PySide6 Desktop Shell • 10 Workspaces)      │
+                     │  (PySide6 Desktop Shell • 13 Workspaces)      │
                      └──────┬───────────────────┬─────────────────┬──┘
                             │                   │                 │
              ┌──────────────┴──────┐  ┌─────────┴───────┐  ┌──────┴──────────────┐
@@ -78,7 +78,7 @@ $$\text{Hypothesis} \longrightarrow \text{Protocol} / \text{Prediction} \longrig
 - **Human-in-the-Loop Approval**: Action proposals (`ExperimentProposal`, `ParameterChanges`, `ParameterSweep`) require scientist verification and sign-off before solver execution.
 - **Dual AI Backends**:
   - **Local Apple Silicon MLX**: Native multimodal Gemma 4 Unified models (Text, Vision, Audio) executing with zero data leakage and bounded context budget management.
-  - **Cloud Google GenAI**: Integration with Google Gemini (`gemini-3.6-flash`) via `google-genai`.
+  - **Cloud Google GenAI**: Integration with a configured Google Gemini model through Vertex AI.
 
 ### 5. Metal GPU-Accelerated Numerical Solvers
 - **Apple Silicon Native**: Optimized 4th-order Runge-Kutta (RK4) ODE solver using `mlx.core` on Metal GPUs.
@@ -100,27 +100,31 @@ $$\text{Hypothesis} \longrightarrow \text{Protocol} / \text{Prediction} \longrig
 
 ---
 
-## Desktop Cockpit: 10 Specialized Workspaces
+## Desktop Cockpit: 13 Top-Level Workspaces
 
-The PySide6 graphical user interface provides 10 domain-specific workspaces:
+The current PySide6 main window exposes 13 top-level tabs:
 
-1. **World**: Molecular topology, protein target interactions, structural coordinate mapping, and cellular compartment visualizations.
-2. **Experiment**: Parameter configuration, boundary conditions, drug exposure profiles, and intervention execution.
-3. **Analysis**: High-framerate interactive trajectory plots, phase-space portraits, and dose-response curves powered by PyQtGraph.
-4. **Local Research Mode**: Interactive AI workbench for autonomous hypothesis generation, context assembly inspection, and proposal review.
-5. **Instruments**: Device status, ZeroConf connection monitor, live camera streaming, optics controls, and exposure calibration.
-6. **Computational Biology**: AlphaGenome assays, individual AlphaFold DB retrieval, saved prediction inspection, and experiment attachment or staging.
-7. **Evidence**: Tabular repository of physical observations, computational assays, assay endpoints, and conflict-detection matrices.
-8. **Provenance**: Interactive audit of the Genesis Ledger hash chain, event tree, computational artifacts, and cryptographic signatures.
-9. **Numerical**: Solver benchmarking, MLX Metal vs. NumPy/SciPy tolerance verification, and numerical certificates.
-10. **Compare**: Multi-run trajectory overlays, counterfactual simulations, and prediction-vs-observation residual analysis.
+1. **Projects**: Create and select studies and experiments; manage study lifecycle.
+2. **Biological objects**: Draft biological entities and inspect their links to studies.
+3. **RHO reference**: Explore the bundled RHO P23H reference world and molecular views.
+4. **Simulation**: Configure and run the implemented mechanistic simulation.
+5. **Analysis**: Inspect simulation trajectories and plots.
+6. **Calibration**: RNA decay and maturation validation views, each in a nested tab.
+7. **Local Research Mode**: Assemble research context and review AI-generated next-step proposals with Vertex credentials.
+8. **Instruments**: Inspect connections, sensor streams, camera data, and controls.
+9. **Computational Biology**: Run AlphaGenome assays, look up individual AlphaFold DB records, and audit BitVision simulator outputs.
+10. **Evidence**: Review saved evidence and its epistemic classification.
+11. **Provenance**: Inspect the ledger and verification state.
+12. **Numerical**: Inspect solver and numerical validation information.
+13. **Compare**: Compare available runs and results.
 
+The RHO view and reference simulation are examples of the current disease program, not evidence that all diseases have validated models. Computational predictions and simulator outputs retain their own labels and do not become `MEASURED` evidence. Signed `.vlab` bundles and `.vlab-study` project archives have distinct trust and security semantics.
 ---
 
 ## Repository Structure
 
 ```
-VirtualLab/
+virtual-lab/
 ├── virtual_lab/                  # Core Python package
 │   ├── ai/                       # Epistemic AI reasoning framework
 │   │   ├── agent/                # Context assembler, agent loop, proposal policies
@@ -141,7 +145,7 @@ VirtualLab/
 │   │   └── rho_p23h/             # Rhodopsin P23H Retinitis Pigmentosa model
 │   ├── domain/                   # Epistemics (9 states), state machine DAG, experiment store
 │   ├── engines/                  # Metal GPU (MLX) & chemistry ODE solvers
-│   ├── gui/                      # PySide6 desktop application & 10 workspaces
+│   ├── gui/                      # PySide6 desktop application & 13 top-level tabs
 │   │   └── shell/                # Main window, theme, workspace manager, system monitor
 │   ├── instruments/              # Transport protocol v1, optics, camera, ZeroConf
 │   └── matter/                   # Elements, isotopes, molecules, units (pint)
@@ -162,13 +166,13 @@ VirtualLab/
 
 ### Prerequisites
 - **Operating System**: macOS (Apple Silicon recommended for MLX GPU acceleration), Linux, or Windows.
-- **Python**: Version `>= 3.10` (tested through Python `3.14`).
+- **Python**: Version `>= 3.10`; core CI covers 3.10, 3.11, and 3.12.
 - **Hardware (Optional)**: Apple Silicon Mac (M1/M2/M3/M4) with 16GB+ unified memory for local MLX model execution.
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-org/VirtualLab.git
-cd VirtualLab
+git clone https://github.com/GI-Company/virtual-lab.git
+cd virtual-lab
 ```
 
 ### 2. Create and Activate a Virtual Environment
@@ -303,7 +307,7 @@ package_vlprogram('virtual_lab/diseases/rho_p23h', 'rho_p23h.vlprogram')
 
 ## Testing & Quality Assurance
 
-VirtualLab features an extensive test suite covering unit functionality, interop protocols, adversarial tampering attacks, and live AI acceptance:
+The release regression suite covers projects, computational adapters and artifact checks, core provenance, instruments, protocol, and selected headless GUI tests. GitHub CI runs it on Python 3.10, 3.11, and 3.12 with `QT_QPA_PLATFORM=offscreen`. Kotlin interop runs when Gradle is installed; live cloud, external-service, and MLX/Metal acceptance require separate credentials or hardware and are not included in core CI. [release_manifest.json](release_manifest.json) records the actual Python 3.12 regression and build snapshot.
 
 ### Run Unit and Domain Tests
 ```bash
@@ -337,7 +341,7 @@ When developing modules or extending VirtualLab:
 
 ## License
 
-VirtualLab is distributed under a research and scientific license. See [pyproject.toml](pyproject.toml) and repository governance files for full terms.
+No license has been declared in this repository. The owner must choose and add licensing terms before describing it as open source or inviting redistribution.
 
 ## Virtual mass spectrometry (precursor isotope envelope)
 

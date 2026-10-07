@@ -1,51 +1,35 @@
 import pytest
 import json
+from pathlib import Path
 import numpy as np
 from virtual_lab.instruments.transport.control_parser import ControlMessageDecoder
-from virtual_lab.instruments.camera import CameraStreamKey
-from virtual_lab.instruments.control import ControlStateStatus
 from virtual_lab.instruments.analysis import calculate_focus_metric
 
 def test_capabilities_parsing():
-    decoder = ControlMessageDecoder()
-    raw = json.dumps({
-        "message_type": "CAMERA_CAPABILITIES",
-        "camera_stream_key": {
-            "device_id": "DEV1",
-            "camera_id": "0",
-            "logical_camera_id": "0",
-            "physical_camera_id": "2"
-        },
-        "manual_focus_supported": True,
-        "exposure_time_range": [1000, 100000000],
-        "iso_range": [50, 3200]
-    })
-    
-    res = decoder.decode(raw)
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/protocol_v1/camera_capabilities.json"
+    data = json.loads(fixture.read_text())
+    data["manual_focus_supported"] = True
+    data["exposure_time_range_ns"] = [1000, 100000000]
+    data["iso_range"] = [50, 3200]
+
+    res = ControlMessageDecoder().decode(json.dumps(data))
     assert res["type"] == "CAPABILITIES"
     caps = res["capabilities"]
-    
-    assert caps.camera_stream_key == CameraStreamKey("DEV1", "0", "0", "2")
+    assert caps.device_id == "DEV-123"
+    assert caps.camera_stream_key.camera_id == "0"
     assert caps.manual_focus_supported is True
-    assert caps.exposure_time_range == (1000, 100000000)
+    assert caps.exposure_time_range_ns == (1000, 100000000)
     assert caps.iso_range == (50, 3200)
 
+
 def test_control_response_parsing():
-    decoder = ControlMessageDecoder()
-    raw = json.dumps({
-        "message_type": "CONTROL_RESPONSE",
-        "request_id": "REQ-123",
-        "control_type": "FOCUS",
-        "requested": 3.2,
-        "applied": 3.18,
-        "status": "APPLIED"
-    })
-    
-    res = decoder.decode(raw)
-    assert res["type"] == "RESPONSE"
-    assert res["request_id"] == "REQ-123"
-    assert res["status"] == ControlStateStatus.APPLIED
-    assert res["applied"] == 3.18
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/protocol_v1/camera_control_result.json"
+    res = ControlMessageDecoder().decode(fixture.read_text())
+    assert res["type"] == "CONTROL_RESULT"
+    result = res["result"]
+    assert result.request_id == "REQ-1"
+    assert result.overall_status == "APPLIED"
+    assert result.parameter_results["exposure_time_ns"].applied == 1000
 
 def test_focus_metric_tenengrad():
     # Uniform image -> 0 gradient energy

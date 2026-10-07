@@ -1,14 +1,10 @@
 import json
-import pytest
-import subprocess
 import os
-from virtual_lab.core.canonical import canonical_json
+import shutil
+import subprocess
 
-import json
-import pytest
-import subprocess
-import os
 import jsonschema
+import pytest
 from virtual_lab.core.canonical import canonical_json
 
 SCHEMA = {
@@ -49,6 +45,7 @@ SCHEMA = {
     ]
 }
 
+@pytest.mark.skipif(shutil.which("gradle") is None, reason="Gradle is required for Kotlin interop")
 def test_python_kotlin_canonical_interop():
     # Construct a sample measurement packet
     payload = {
@@ -73,7 +70,6 @@ def test_python_kotlin_canonical_interop():
     # Execute Kotlin program to generate JSON
     interop_dir = os.path.join(os.path.dirname(__file__), "kotlin_interop")
     env = os.environ.copy()
-    env["JAVA_HOME"] = "/opt/homebrew/opt/openjdk@21"
     result = subprocess.run(["gradle", "run", "--no-daemon", "--quiet"], cwd=interop_dir, capture_output=True, text=True, env=env)
     if result.returncode != 0:
         pytest.fail(f"Kotlin execution failed: {result.stderr}")
@@ -95,6 +91,7 @@ def test_python_kotlin_canonical_interop():
     assert payload == py_deserialized_kt
 
 
+@pytest.mark.skipif(shutil.which("gradle") is None, reason="Gradle is required for Kotlin interop")
 def test_python_kotlin_python_bidirectional_interop():
     payload = {
         "protocol_version": "1.0",
@@ -119,7 +116,6 @@ def test_python_kotlin_python_bidirectional_interop():
     # 2. Pass to Kotlin
     interop_dir = os.path.join(os.path.dirname(__file__), "kotlin_interop")
     env = os.environ.copy()
-    env["JAVA_HOME"] = "/opt/homebrew/opt/openjdk@21"
     # Wrap in single quotes so gradle treats it as one argument and preserves double quotes
     gradle_args = f"--args='{py_json_str}'"
     result = subprocess.run(["gradle", "run", gradle_args, "--no-daemon", "--quiet"], cwd=interop_dir, capture_output=True, text=True, env=env)

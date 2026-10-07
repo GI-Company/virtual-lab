@@ -56,11 +56,13 @@ def test_sensor_measurement_binds_and_streams():
         
         raw_measurement = json.dumps({
             "schema_version": "1",
-            "message_type": "MEASUREMENT",
+            "message_type": "MEASUREMENT_PACKET",
             "device_id": "ANDROID-test",
-            "session_id": "S1",
-            "sequence_number": 1,
-            "timestamp_utc": 1000,
+            "stream_id": "S1",
+            "sensor_id": "acc",
+            "sequence": 1,
+            "device_timestamp_ns": 1000,
+            "device_timebase": "MONOTONIC",
             "measurement_type": "ACCELERATION",
             "values": {"ax": 0.0, "ay": 0.0, "az": 1.0},
             "units": {"ax": "m/s^2", "ay": "m/s^2", "az": "m/s^2"}
@@ -126,11 +128,13 @@ def test_info_logging_occurs_on_transition(caplog):
         
         raw_measurement = json.dumps({
             "schema_version": "1",
-            "message_type": "MEASUREMENT",
+            "message_type": "MEASUREMENT_PACKET",
             "device_id": "ANDROID-test",
-            "session_id": "S1",
-            "sequence_number": 1,
-            "timestamp_utc": 1000,
+            "stream_id": "S1",
+            "sensor_id": "acc",
+            "sequence": 1,
+            "device_timestamp_ns": 1000,
+            "device_timebase": "MONOTONIC",
             "measurement_type": "ACCELERATION",
             "values": {"ax": 0.0, "ay": 0.0, "az": 1.0},
             "units": {"ax": "m/s^2", "ay": "m/s^2", "az": "m/s^2"}
