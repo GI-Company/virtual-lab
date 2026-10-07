@@ -1,30 +1,34 @@
 {
   "version": "1.0.0-beta.1",
-  "git_commit": "unknown",
-  "git_dirty": false,
-  "build_timestamp_utc": "2026-09-14T02:35:00Z",
-
-  "python_version": "3.14.4",
-  "numpy_version": "2.2.0",
-  "scipy_version": "1.15.0",
-  "mlx_version": "0.23.0",
-
-  "platform": "macOS",
-  "architecture": "arm64",
-  "chip": "Apple Silicon",
-
-  "disease_program": "RHO_P23H",
-  "numerical_certificate_id": "CERT-1.0-RK4-MLX",
-  "numerical_certificate_hash": "e823f91e7cf8ed5e8dbcfb6f6fca0939e8515117fbdacc210c699e70e0712152",
-
-  "ledger_schema_version": "1.0",
-  "experiment_ir_schema_version": "0.1",
-
-  "reference_ai_provider": "gemini",
-  "reference_ai_model_actual": "gemini-3.6-flash",
-
-  "tests_total": 19,
-  "tests_passed": 18,
+  "generated_utc": "2026-10-07T02:47:38+00:00",
+  "test_suite": "Core, GUI regression, instruments, protocol, projects, computational biology",
+  "test_result_source": "pytest JUnit XML",
+  "tests_total": 144,
+  "tests_passed": 142,
   "tests_failed": 0,
-  "live_ai_acceptance": "PASSED"
+  "tests_errors": 0,
+  "tests_skipped": 2,
+  "tests_xfailed": 0,
+  "skipped_cases": [
+    {
+      "test": "tests.protocol.test_interop.test_python_kotlin_canonical_interop",
+      "reason": "Gradle is required for Kotlin interop"
+    },
+    {
+      "test": "tests.protocol.test_interop.test_python_kotlin_python_bidirectional_interop",
+      "reason": "Gradle is required for Kotlin interop"
+    }
+  ],
+  "tests_not_run": [
+    "live cloud API / external-service acceptance",
+    "MLX/Metal hardware tests"
+  ],
+  "python_version": "3.12.14",
+  "platform": "Darwin",
+  "architecture": "arm64",
+  "build": {
+    "status": "passed",
+    "artifact": "virtual_lab-1.0.0b1-py3-none-any.whl",
+    "sha256": "e35caed05cd337839458e73860cf28c1f4fc2b440491b0b75a894451bd2d2f71"
+  }
 }

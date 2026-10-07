@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRunnable, QThreadPool, Signal, QObject
 from PySide6.QtGui import QAction
 
+from ..version import __version__
 from ..core.experiment import VirtualExperiment
 from ..core.state import WorkspaceState
 from ..core.ledger import GenesisLedger, Actor
@@ -354,7 +355,7 @@ class MainWindow(QMainWindow):
 
     def _show_about(self):
         QMessageBox.about(self, "About VirtualLab",
-            "<h3>VirtualLab v1.0.0-beta.1-rc1</h3>"
+            f"<h3>VirtualLab v{__version__}</h3>"
             "<p>Disease Model: <b>RHO P23H Retinitis Pigmentosa</b></p>"
             "<p>Engine: MLX (Apple Silicon)</p>"
             "<p>Provenance: Tamper-Evident Genesis Ledger</p>"

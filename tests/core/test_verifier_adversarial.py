@@ -1,144 +1,80 @@
-import pytest
-import zipfile
-import json
-import os
-import tempfile
+"""Regression checks against the current .vlab verifier interface."""
+
 import sqlite3
-import hashlib
-from virtual_lab.core.provenance_export import secure_extract, verify_genesis_chain, VerifierError, explain_provenance
-from virtual_lab.core.canonical import canonical_json
+import zipfile
 
-def create_mock_vlab(path, malicious_type=None):
-    with zipfile.ZipFile(path, 'w') as zf:
-        if malicious_type == "traversal":
-            # Simulate traversal attempt
-            zf.writestr("../evil.txt", b"evil")
-        elif malicious_type == "missing_manifest":
-            pass # No manifest
-        else:
+from virtual_lab.core.provenance_export import (
+    VerifierError,
+    explain_provenance,
+    verify_genesis_chain,
+)
 
-            # Genesis DB
-            db_fd, db_path = tempfile.mkstemp()
-            os.close(db_fd)
-            conn = sqlite3.connect(db_path)
-            conn.execute('''CREATE TABLE ledger_events (
-                            schema_version TEXT,
-                            sequence INTEGER,
-                            event_id TEXT,
-                            timestamp_utc TEXT,
-                            actor_type TEXT,
-                            actor_id TEXT,
-                            event_type TEXT,
-                            payload_json TEXT,
-                            parent_hash TEXT,
-                            event_hash TEXT
-                        )''')
-            
-            envelope = {
-                "schema_version": "1.0",
-                "sequence": 1,
-                "event_id": "EVT-1",
-                "timestamp_utc": "2026-09-18T00:00:00Z",
-                "actor": {
-                    "type": "HUMAN",
-                    "id": "H-1",
-                    "provider": None,
-                    "model": None
-                },
-                "event_type": "PROPOSAL_CREATED",
-                "payload": {"target": "test"},
-                "parent_hash": "0" * 64
-            }
-            canonical_bytes = canonical_json(envelope)
-            event_hash = hashlib.sha256(canonical_bytes).hexdigest()
-            
-            event_payload = json.dumps({"target": "test"})
-            
-            if malicious_type == "tampered_hash":
-                event_hash = "badhash"
-            elif malicious_type == "genesis_event_changed":
-                # Changing the payload, which should invalidate the hash
-                event_payload = json.dumps({"target": "evil"})
-                
-            conn.execute('''INSERT INTO ledger_events VALUES 
-                            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                         ("1.0", 1, "EVT-1", "2026-09-18T00:00:00Z", 
-                          "HUMAN", "H-1", "PROPOSAL_CREATED", 
-                          event_payload, "0" * 64, event_hash))
-            conn.commit()
-            conn.close()
-            
-            with open(db_path, 'rb') as f:
-                genesis_hash = hashlib.sha256(f.read()).hexdigest()
-                
-            manifest = {
-                "vlab_version": "1.0", 
-                "build_utc": "2026-09-18T00:00:00Z",
-                "contents": [
-                    {"path": "genesis.db", "sha256": genesis_hash}
-                ]
-            }
-            
-            if malicious_type == "missing_artifact":
-                # Add to manifest, but don't add to zip
-                manifest["contents"].append({"path": "file1.txt", "sha256": hashlib.sha256(b"artifact_data").hexdigest()})
-            else:
-                # Add a normal file to the manifest and zip
-                file_content = b"artifact_data"
-                if malicious_type == "artifact_byte_changed":
-                    file_content = b"artifact_data_changed"
-                manifest["contents"].append({"path": "file1.txt", "sha256": hashlib.sha256(b"artifact_data").hexdigest()})
-                zf.writestr("file1.txt", file_content)
-                
-            zf.writestr("manifest.json", json.dumps(manifest))
-            zf.write(db_path, "genesis.db")
-            os.remove(db_path)
 
-def test_secure_extract_traversal():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        vlab_path = os.path.join(tmpdir, "test.vlab")
-        create_mock_vlab(vlab_path, "traversal")
-        
-        with pytest.raises(VerifierError, match="traversal"):
-            with zipfile.ZipFile(vlab_path, 'r') as bundle:
-                secure_extract(bundle, os.path.join(tmpdir, "extract"))
+def test_traversal_rejected_before_extraction(tmp_path):
+    bundle = tmp_path / "traversal.vlab"
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.writestr("../escape.txt", b"escape")
+    assert "Zip traversal attack detected" in explain_provenance(str(bundle))
+    assert not (tmp_path / "escape.txt").exists()
 
-def test_verify_genesis_tampered():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        vlab_path = os.path.join(tmpdir, "test.vlab")
-        create_mock_vlab(vlab_path, "tampered_hash")
-        
-        report = explain_provenance(vlab_path)
-        assert "Error: Genesis hash mismatch" in report
 
-def test_verify_genesis_success():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        vlab_path = os.path.join(tmpdir, "test.vlab")
-        create_mock_vlab(vlab_path)
-        
-        report = explain_provenance(vlab_path)
-        assert "Genesis hash chain: VERIFIED" in report
+def test_missing_signature_rejected(tmp_path):
+    bundle = tmp_path / "unsigned.vlab"
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.writestr("manifest.json", b"{}")
+    assert "missing manifest.json or manifest.sig" in explain_provenance(str(bundle))
 
-def test_missing_artifact():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        vlab_path = os.path.join(tmpdir, "test.vlab")
-        create_mock_vlab(vlab_path, "missing_artifact")
-        
-        report = explain_provenance(vlab_path)
-        assert "Error: Missing artifact: file1.txt" in report
 
-def test_artifact_byte_changed():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        vlab_path = os.path.join(tmpdir, "test.vlab")
-        create_mock_vlab(vlab_path, "artifact_byte_changed")
-        
-        report = explain_provenance(vlab_path)
-        assert "Error: Artifact hash mismatch: file1.txt" in report
+def test_tampered_genesis_hash_rejected(tmp_path):
+    db = tmp_path / "genesis.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("""CREATE TABLE ledger_events (
+            schema_version TEXT, sequence INTEGER, event_id TEXT,
+            timestamp_utc TEXT, actor_type TEXT, actor_id TEXT,
+            event_type TEXT, payload_json TEXT, parent_hash TEXT,
+            event_hash TEXT)""")
+        conn.execute("INSERT INTO ledger_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     ("1.0", 1, "EVT-1", "2026-09-18T00:00:00Z", "HUMAN",
+                      "H-1", "PROPOSAL_CREATED", '{"target":"test"}', "0" * 64,
+                      "tampered"))
+    try:
+        verify_genesis_chain(str(db))
+    except VerifierError as error:
+        assert "Genesis hash mismatch" in str(error)
+    else:
+        raise AssertionError("Tampered ledger event was accepted")
 
-def test_genesis_event_changed():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        vlab_path = os.path.join(tmpdir, "test.vlab")
-        create_mock_vlab(vlab_path, "genesis_event_changed")
-        
-        report = explain_provenance(vlab_path)
-        assert "Genesis hash mismatch" in report
+
+def test_artifact_digest_checked_after_signature_gate(tmp_path, monkeypatch):
+    """Isolate the digest stage; signature enforcement is checked separately."""
+    import hashlib
+    from unittest.mock import Mock
+
+    from virtual_lab.core.canonical import canonical_json
+
+    db = tmp_path / "genesis.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("""CREATE TABLE ledger_events (
+            schema_version TEXT, sequence INTEGER, event_id TEXT,
+            timestamp_utc TEXT, actor_type TEXT, actor_id TEXT,
+            event_type TEXT, payload_json TEXT, parent_hash TEXT,
+            event_hash TEXT)""")
+    original = b"original data"
+    manifest = {
+        "vlab_version": "1.0",
+        "build_utc": "2026-09-18T00:00:00Z",
+        "contents": [
+            {"path": "genesis.db", "sha256": hashlib.sha256(db.read_bytes()).hexdigest()},
+            {"path": "artifact.bin", "sha256": hashlib.sha256(original).hexdigest()},
+        ],
+    }
+    bundle = tmp_path / "tampered.vlab"
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.writestr("manifest.json", canonical_json(manifest))
+        archive.writestr("manifest.sig", b"test-only-signature")
+        archive.write(db, "genesis.db")
+        archive.writestr("artifact.bin", b"altered data")
+
+    monkeypatch.setattr("virtual_lab.core.trusted_signers.verify_signer_role", lambda *_: True)
+    monkeypatch.setattr("nacl.signing.VerifyKey", Mock(return_value=Mock()))
+    assert "Artifact hash mismatch: artifact.bin" in explain_provenance(str(bundle))

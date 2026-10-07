@@ -73,28 +73,28 @@ def test_device_overall_state():
     registry.bind_connection("CONN-S", "ANDROID-1")
     
     dev = registry.devices["ANDROID-1"]
-    assert dev.overall_state().value == "PARTIAL"
+    assert dev.overall_state().value == "PARTIALLY_CONNECTED"
     
     # Add control
     conn_ctl = ChannelConnectionState("control", "CONN-C", 1, MockSocket(), "IP", 1000)
     registry.add_connection(conn_ctl)
     registry.bind_connection("CONN-C", "ANDROID-1")
-    assert dev.overall_state().value == "PARTIAL"
+    assert dev.overall_state().value == "PARTIALLY_CONNECTED"
     
     # Add camera
     conn_cam = ChannelConnectionState("camera", "CONN-CAM", 1, MockSocket(), "IP", 1000)
     registry.add_connection(conn_cam)
     registry.bind_connection("CONN-CAM", "ANDROID-1")
     
-    assert dev.overall_state().value == "READY"
+    assert dev.overall_state().value == "FULLY_CONNECTED"
     
-    # Set camera streaming
+    # Streaming still has all three channels connected.
     dev.camera.state = CameraChannelState.STREAMING
-    assert dev.overall_state().value == "ACQUIRING"
+    assert dev.overall_state().value == "FULLY_CONNECTED"
     
     # Simulate a channel failure
     dev.sensors.state = SensorChannelState.FAILED
-    assert dev.overall_state().value == "DEGRADED"
+    assert dev.overall_state().value == "ERROR"
 
     # Fully disconnect
     registry.remove_connection("CONN-S")
@@ -122,12 +122,12 @@ def test_sensors_only_partial_connection():
     assert dev.camera is None
     assert dev.control is None
     
-    # Overall state must be PARTIAL (or ACQUIRING if streaming), NOT DISCONNECTED
-    assert dev.overall_state().value == "PARTIAL"
+    # A single connected channel remains partially connected.
+    assert dev.overall_state().value == "PARTIALLY_CONNECTED"
     
-    # If it starts streaming, it should be ACQUIRING
+    # Streaming on one channel remains partially connected.
     dev.sensors.state = SensorChannelState.STREAMING
-    assert dev.overall_state().value == "ACQUIRING"
+    assert dev.overall_state().value == "PARTIALLY_CONNECTED"
 
 def test_live_recording_channel_attribution_bug():
     registry = ConnectionRegistry()
@@ -152,11 +152,11 @@ def test_live_recording_channel_attribution_bug():
     assert dev.camera.state == CameraChannelState.CONNECTED
     assert dev.control is None
     
-    assert dev.overall_state().value == "ACQUIRING"
+    assert dev.overall_state().value == "PARTIALLY_CONNECTED"
     
     # Then disconnect /sensors
     registry.remove_connection("CONN-S1")
     
     assert dev.sensors.state == SensorChannelState.DISCONNECTED
     assert dev.camera.state == CameraChannelState.CONNECTED
-    assert dev.overall_state().value == "PARTIAL"
+    assert dev.overall_state().value == "PARTIALLY_CONNECTED"

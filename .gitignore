@@ -35,6 +35,12 @@ venv.bak/
 .pytest_cache/
 .coverage
 htmlcov/
+test_out.txt
+test_results.txt
+.DS_Store
+.gradle/
+.kotlin/
+tests/protocol/kotlin_interop/bin/
 
 # VirtualLab specific
 data/

@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 from virtual_lab.gui.shell.workspace_manager import WorkspaceState
 from virtual_lab.gui.services.selection import ScientificSelection, SelectionKind
 
@@ -33,6 +34,7 @@ def test_experiment_change():
     exp_emitted = []
     ws.activeExperimentChanged.connect(lambda v: exp_emitted.append(v))
     
-    ws.active_experiment_id = "EXP-123"
+    experiment = SimpleNamespace(id="EXP-123")
+    ws.active_experiment = experiment
     assert exp_emitted == ["EXP-123"]
-    assert ws.active_experiment_id == "EXP-123"
+    assert ws.active_experiment is experiment
