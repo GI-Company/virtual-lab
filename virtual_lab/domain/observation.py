@@ -83,7 +83,7 @@ _UNIT_SCALES: dict[PhysicalDimension, dict[str, float]] = {
         "fraction": 1.0, "": 1.0,
     },
     PhysicalDimension.DIMENSIONLESS: {
-        "": 1.0,
+        "": 1.0, "normalized units": 1.0,
     },
 }
 
@@ -304,6 +304,9 @@ SENSOR_QUANTITY_MAP: dict[str, list[QuantityDescriptor]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ObservationKind(Enum):
+    BIOLOGICAL_SYSTEM = "BIOLOGICAL_SYSTEM"
+    CALIBRATION     = "CALIBRATION"
+    MODEL_EVALUATION = "MODEL_EVALUATION"
     SENSOR_STREAM    = "SENSOR_STREAM"
     CAMERA_FRAME     = "CAMERA_FRAME"
     MICROSCOPY       = "MICROSCOPY"

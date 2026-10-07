@@ -82,7 +82,8 @@ def register(run: CompletedRun, ledger, store) -> NormalizedObservation:
     observation = NormalizedObservation(
         observation_id=manifest["run_id"], experiment_id=manifest["request"]["experiment_id"],
         session_id=manifest["run_id"], instrument_id=manifest["instrument"],
-        kind=ObservationKind.VIRTUAL_ASSAY, quantities=[],
+        kind=(ObservationKind.MODEL_EVALUATION if manifest["instrument"] == "bitvision_simulator_audit"
+              else ObservationKind.VIRTUAL_ASSAY), quantities=[],
         artifact_path=run.manifest_path, artifact_sha256=run.sha256,
         acquisition_utc=manifest["created_at"], epistemic_state=EpistemicState(manifest["epistemic_state"]),
         parent_observation_id=manifest.get("parent_run", {}).get("run_id"),
@@ -95,11 +96,20 @@ def register(run: CompletedRun, ledger, store) -> NormalizedObservation:
         if json.loads(existing["payload_json"])["artifact_sha256"] != run.sha256:
             raise ValueError("This run already has a different digest in the ledger.")
     else:
+        event_type = ("SIMULATOR_AUDIT_RECORDED" if manifest["instrument"] == "bitvision_simulator_audit"
+                      else "COMPUTATIONAL_PREDICTION_RECORDED")
         ledger.append(event_id, Actor(type="SYSTEM", id=manifest["instrument"]),
-                      "COMPUTATIONAL_PREDICTION_RECORDED",
+                      event_type,
                       {"run_id": manifest["run_id"], "experiment_id": observation.experiment_id,
                        "artifact_path": run.manifest_path, "artifact_sha256": run.sha256,
                        "instrument": manifest["instrument"], "epistemic_state": manifest["epistemic_state"]})
+    # An assigned staged result must never be restaged by registration retries.
+    attached = store._conn.execute("SELECT * FROM observations WHERE observation_id=?",
+                                   (observation.observation_id,)).fetchone()
+    if attached:
+        if attached['artifact_sha256'] != run.sha256:
+            raise ValueError("Attached result has a different digest.")
+        return store._row_to_obs(attached)
     if observation.experiment_id:
         store.save_observation(observation)
     else:

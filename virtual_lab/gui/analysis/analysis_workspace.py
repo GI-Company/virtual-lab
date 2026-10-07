@@ -5,16 +5,6 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
 
-# State names map
-STATE_NAMES = [
-    "Surface RHO",
-    "ER Retention",
-    "ER Stress",
-    "Viability"
-]
-# The actual states are indices 2, 1, 3, 4 based on the Rho ODE (R_f=0, R_ER=1, R_s=2, S=3, V=4)
-STATE_INDICES = [2, 1, 3, 4] 
-
 class AnalysisWorkspace(QWidget):
     def __init__(self, workspace, parent=None):
         super().__init__(parent)
@@ -27,11 +17,12 @@ class AnalysisWorkspace(QWidget):
         
         # Left Panel - Endpoints
         left_panel = QWidget()
+        left_panel.setMinimumWidth(210)
         left_layout = QVBoxLayout(left_panel)
         left_layout.addWidget(QLabel("Endpoints"))
         
         self.list_endpoints = QListWidget()
-        self.list_endpoints.addItems(STATE_NAMES)
+        self.list_endpoints.addItem("Select a simulation")
         self.list_endpoints.setCurrentRow(0)
         self.list_endpoints.currentRowChanged.connect(self.refresh)
         
@@ -58,10 +49,10 @@ class AnalysisWorkspace(QWidget):
         
         # PRCC Table
         prcc_panel = QVBoxLayout()
-        self.lbl_prcc_title = QLabel("PRCC (Monotonic Association)")
+        self.lbl_prcc_title = QLabel("Spearman rank correlation")
         prcc_panel.addWidget(self.lbl_prcc_title)
         self.table_prcc = QTableWidget(0, 2)
-        self.table_prcc.setHorizontalHeaderLabels(["Parameter", "PRCC"])
+        self.table_prcc.setHorizontalHeaderLabels(["Parameter", "Spearman ρ"])
         self.table_prcc.horizontalHeader().setStretchLastSection(True)
         prcc_panel.addWidget(self.table_prcc)
         top_right.addLayout(prcc_panel)
@@ -98,19 +89,31 @@ class AnalysisWorkspace(QWidget):
 
     def set_result(self, result):
         self.result = result
+        self.list_endpoints.blockSignals(True)
+        self.list_endpoints.clear()
+        if result:
+            self.list_endpoints.addItems([s['label'] for s in result.state_metadata])
+            self.list_endpoints.setCurrentRow(0)
+        self.list_endpoints.blockSignals(False)
         self.refresh()
 
     def refresh(self):
-        if not self.result: return
+        if not self.result:
+            self.plot_dist.clear(); self.plot_time.clear(); self.table_prcc.setRowCount(0)
+            self.lbl_dist_title.setText("Select a saved simulation in Projects")
+            return
         r = self.result
         idx = self.list_endpoints.currentRow()
         if idx < 0: return
-        state_idx = STATE_INDICES[idx]
-        state_name = STATE_NAMES[idx]
+        state_idx = idx
+        state = r.state_metadata[idx]
+        state_name = state['label']
+        self.plot_dist.setLabel('bottom', state_name, units=state['units'])
+        self.plot_time.setLabel('left', state_name, units=state['units'])
         
         # 1. Endpoint Distribution
         epistemic_tag = f"[{r.epistemic_state.value}]" if hasattr(r, 'epistemic_state') else ""
-        self.lbl_dist_title.setText(f"Endpoint Distribution (final_state) {epistemic_tag}")
+        self.lbl_dist_title.setText(f"{r.model_label} · {state_name} {epistemic_tag}")
         self.plot_dist.clear()
         final_state = r.final_state[:, state_idx]
         
@@ -138,11 +141,15 @@ class AnalysisWorkspace(QWidget):
                 brush=(56, 189, 248, 50)
             )
             self.plot_time.addItem(fill)
-            self.plot_time.plot(times, med, pen=pg.mkPen("#38bdf8", width=2), name="Treated Median")
+            self.plot_time.plot(times, med, pen=pg.mkPen("#38bdf8", width=2), name="Exposure median")
             
-        # 3. PRCC Table
+        if r.control_trajectory:
+            self.plot_time.plot(times, r.control_trajectory['median'][:, state_idx],
+                                pen=pg.mkPen('#f5b85b', width=2, style=Qt.DashLine), name='Control median')
+
+        # 3. Parameter associations
         # We calculate PRCC on the fly using Spearman correlation as a proxy for monotonic association
-        self.lbl_prcc_title.setText("PRCC (Monotonic Association) [CALCULATED]")
+        self.lbl_prcc_title.setText("Spearman rank correlation [CALCULATED]")
         self.table_prcc.clearContents()
         y = r.final_state[:, state_idx]
         

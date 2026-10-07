@@ -7,6 +7,9 @@ class NumericalWorkspace(QWidget):
         self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setPlainText("NOT RUN — no numerical certificate exists.")
         layout.addWidget(self.details);workspace.resultChanged.connect(self.update_result)
     def update_result(self,r):
+        if r is None:
+            self.details.setPlainText("Select a saved simulation in Projects to view its numerical check.")
+            return
         nc = r.numerical_check
         status = nc.get('status', 'FAILED')
         env = "WITHIN RANGE" if status == "PASSED" else "OUTSIDE CERTIFIED ENVELOPE"

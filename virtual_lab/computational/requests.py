@@ -67,9 +67,19 @@ class StructureRequest(InstrumentRequest):
     include_pae: bool = False
 
 
-def parse_request(data: dict) -> GenomeRequest | StructureRequest:
+class BitVisionAuditRequest(InstrumentRequest):
+    """Audit an exported simulator evaluation without running its checkpoint."""
+    instrument: Literal["bitvision_simulator_audit"] = "bitvision_simulator_audit"
+    archive_path: str = Field(min_length=1, max_length=4096)
+    fp16_path: str = Field(min_length=1, max_length=4096)
+    fp32_path: str = Field(min_length=1, max_length=4096)
+
+
+def parse_request(data: dict) -> GenomeRequest | StructureRequest | BitVisionAuditRequest:
     if data.get("instrument") == "alphagenome":
         return GenomeRequest.model_validate(data)
     if data.get("instrument") == "alphafold_db":
         return StructureRequest.model_validate(data)
+    if data.get("instrument") == "bitvision_simulator_audit":
+        return BitVisionAuditRequest.model_validate(data)
     raise ValueError("Unknown computational instrument.")

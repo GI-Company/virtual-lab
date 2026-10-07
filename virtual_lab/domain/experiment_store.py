@@ -166,6 +166,18 @@ class ExperimentStore:
         
         # Migrate schema for existing tables if columns are missing
         obs_cols = {r[1] for r in c.execute("PRAGMA table_info(observations)").fetchall()}
+        exp_cols = {r[1] for r in c.execute("PRAGMA table_info(experiments)").fetchall()}
+        for name in ("project_id", "research_question"):
+            if name not in exp_cols:
+                c.execute(f"ALTER TABLE experiments ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS workspace_settings (
+                key TEXT PRIMARY KEY, value TEXT NOT NULL
+            );
+        """)
         if "quality_state" not in obs_cols:
             c.execute("ALTER TABLE observations ADD COLUMN quality_state TEXT NOT NULL DEFAULT 'UNKNOWN'")
         if "parent_observation_id" not in obs_cols:
@@ -188,17 +200,22 @@ class ExperimentStore:
         parent_id: Optional[str] = None,
         label: Optional[str] = None,
         status: str = "active",
+        project_id: str = "",
+        research_question: str = "",
     ):
         now = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
             """
             INSERT OR REPLACE INTO experiments
                 (id, disease_id, compound_id, evidence_snapshot,
-                 parent_id, status, created_at, label)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 parent_id, status, created_at, label, project_id, research_question)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET label=excluded.label,
+                status=excluded.status, project_id=excluded.project_id,
+                research_question=excluded.research_question
             """,
             (experiment_id, disease_id, compound_id, evidence_snapshot,
-             parent_id, status, now, label),
+             parent_id, status, now, label, project_id, research_question),
         )
         self._conn.commit()
 
@@ -223,7 +240,7 @@ class ExperimentStore:
 
     # ── Observations ──────────────────────────────────────────────────────────
 
-    def save_observation(self, obs: ExperimentObservation):
+    def save_observation(self, obs: ExperimentObservation, *, commit=True):
         existing = self._conn.execute(
             "SELECT epistemic_state, artifact_sha256 FROM observations WHERE observation_id = ?",
             (obs.observation_id,)
@@ -263,7 +280,8 @@ class ExperimentStore:
                 parent_id
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def get_observations_for_experiment(
         self, experiment_id: str
@@ -352,6 +370,8 @@ class ExperimentStore:
         Move an observation from staging to the experiments table.
         Returns the fully attached ExperimentObservation on success.
         """
+        if self.get_experiment(experiment_id) is None:
+            raise ValueError("Select an existing experiment before assigning a result.")
         row = self._conn.execute(
             "SELECT * FROM staging WHERE observation_id = ?", (observation_id,)
         ).fetchone()

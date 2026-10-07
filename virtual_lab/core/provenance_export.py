@@ -201,9 +201,9 @@ def explain_provenance(vlab_path: str) -> str:
             extracted_files = set()
             for root, _, files in os.walk(tmpdir):
                 for file in files:
-                    if file not in ["manifest.json", "manifest.sig"]:
-                        full_path = os.path.join(root, file)
-                        rel_path = os.path.relpath(full_path, tmpdir)
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, tmpdir)
+                    if rel_path not in ["manifest.json", "manifest.sig"]:
                         extracted_files.add(rel_path)
             
             if extracted_files != expected_files:
@@ -265,4 +265,3 @@ def explain_provenance(vlab_path: str) -> str:
     report.append("==================================================")
     
     return "\n".join(report)
-

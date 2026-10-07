@@ -65,9 +65,13 @@ class VirtualLabApplication(QMainWindow):
         
         h_layout.addStretch()
         
-        lbl_proj = QLabel("Project: <b>RHO P23H</b>")
-        lbl_exp = QLabel("Experiment: <b>Computational hypothesis</b>")
-        lbl_branch = QLabel("Model: <b>Exploratory</b>")
+        lbl_proj = QLabel("Project: None selected")
+        self.project_label = lbl_proj
+        lbl_exp = QLabel("Experiment: Unassigned staging")
+        self.experiment_label = lbl_exp
+        lbl_branch = QLabel("Research workspace")
+        lbl_proj.setTextFormat(Qt.PlainText)
+        lbl_exp.setTextFormat(Qt.PlainText)
         
         h_layout.addWidget(lbl_proj)
         h_layout.addSpacing(15)
@@ -111,9 +115,26 @@ class VirtualLabApplication(QMainWindow):
         self.numerical = NumericalWorkspace(self.workspace)
         self.compare = CompareWorkspace(self.workspace)
         
-        self.tabs.addTab(self.world, "World")
-        self.tabs.addTab(self.experiment, "Experiment")
+        from virtual_lab.gui.projects_workspace import ProjectsWorkspace
+        self.projects = ProjectsWorkspace(self.workspace, self.ledger)
+        from virtual_lab.gui.calibration_workspace import CalibrationWorkspace
+        self.calibration = CalibrationWorkspace(self.workspace, self.projects.service)
+        from virtual_lab.gui.biological_workspace import BiologicalWorkspace
+        self.biological = BiologicalWorkspace(self.workspace, self.projects.service)
+        self.tabs.addTab(self.projects, "Projects")
+        self.tabs.addTab(self.biological, "Biological objects")
+        self.workspace.biologicalDraftRequested.connect(lambda _: self.tabs.setCurrentWidget(self.biological))
+        self.tabs.addTab(self.world, "RHO reference")
+        self.tabs.addTab(self.experiment, "Simulation")
         self.tabs.addTab(self.analysis, "Analysis")
+        from virtual_lab.gui.maturation_validation_workspace import MaturationValidationWorkspace
+        self.maturation_validation = MaturationValidationWorkspace(self.workspace, self.projects.service)
+        self.calibration_tabs = QTabWidget()
+        self.calibration_tabs.addTab(self.calibration, "RNA decay")
+        self.calibration_tabs.addTab(self.maturation_validation, "Maturation validation")
+        self.workspace.validationResultChanged.connect(lambda value: self.calibration_tabs.setCurrentWidget(self.maturation_validation) if value else None)
+        self.workspace.calibrationResultChanged.connect(lambda value: self.calibration_tabs.setCurrentWidget(self.calibration) if value else None)
+        self.tabs.addTab(self.calibration_tabs, "Calibration")
         self.tabs.addTab(self.local_research, "Local Research Mode")
         self.tabs.addTab(self.instruments, "Instruments")
         self.tabs.addTab(self.computational, "Computational Biology")
@@ -131,19 +152,21 @@ class VirtualLabApplication(QMainWindow):
         self.workspace.evidenceSelectionChanged.connect(lambda _: self.tabs.setCurrentWidget(self.evidence))
         self.workspace.resultChanged.connect(self._refresh_status)
         self._refresh_status()
-        from virtual_lab.gui.services.run_store import RunStore
-        from virtual_lab.gui.services.simulation_result import SimulationResult
-        try:
-            runs=RunStore().load_all()
-            if runs:self.workspace.current_result=SimulationResult.from_dict(runs[-1])
-        except Exception:
-            pass  # Integrity error is visible in the header and Provenance workspace.
+        self.workspace.activeExperimentChanged.connect(self._refresh_context)
+        self._refresh_context()
+
+    def _refresh_context(self, *_):
+        exp = self.workspace.active_experiment
+        project = next((p for p in self.projects.service.projects()
+                        if exp and p['id'] == exp.project_id), None)
+        self.project_label.setText('Project: ' + (project['name'] if project else 'None selected'))
+        self.experiment_label.setText('Experiment: ' + ((exp.label or exp.id) if exp else 'Unassigned staging'))
 
     def _refresh_status(self,*_):
         from virtual_lab.gui.services.run_store import RunStore
         try:
             store=RunStore();runs=store.load_all()
-            self.ledger_status.setText(f"{len(runs)} saved runs verified" if store.events() else "No local ledger yet")
+            self.ledger_status.setText(f"{len(runs)} saved simulation runs verified" if store.events() else "No local ledger yet")
         except Exception as exc:
             self.ledger_status.setText("INTEGRITY ERROR")
             self.ledger_status.setToolTip(str(exc))

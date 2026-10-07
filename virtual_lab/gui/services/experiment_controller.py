@@ -42,6 +42,7 @@ class ExperimentController(QObject):
             cfg=RunConfig(**config);cfg.validate()
         except (TypeError,ValueError) as exc:
             self.runFailed.emit(str(exc));return
+        self.experiment_at_start = self.workspace.active_experiment
         self.worker=SimulationWorker(cfg)
         self.worker.signals.progress.connect(self.runProgress)
         self.worker.signals.result.connect(self._complete)
@@ -58,7 +59,11 @@ class ExperimentController(QObject):
             self._cancelled();return
         self.worker=None
         try:
-            self.store.save(result)
+            result = dict(result, experiment_id=self.experiment_at_start.id if self.experiment_at_start else "")
+            artifact_path = self.store.save(result)
+            from virtual_lab.computational.artifacts import digest
+            from pathlib import Path
+            result = dict(result, artifact_path=artifact_path, artifact_sha256=digest(Path(artifact_path)))
         except Exception as exc:
             self.runFailed.emit(f"Computed but could not save result: {exc}");return
             
@@ -68,20 +73,26 @@ class ExperimentController(QObject):
         from virtual_lab.domain.assemblers import simulation_result_to_observation
         from virtual_lab.domain.experiment_store import ExperimentStore
         
-        active_exp = self.workspace.active_experiment
+        active_exp = self.experiment_at_start
         exp_id_for_obs = active_exp.id if active_exp else ""
         obs = simulation_result_to_observation(result, exp_id_for_obs)
         
         db = ExperimentStore()
-        if active_exp:
-            active_exp.attach_observation(obs)
-            db.save_observation(obs)
-            self.workspace.observationCommitted.emit(obs)
-        else:
-            db.stage_observation(obs)
-            self.workspace.observationStaged.emit(obs)
-        
-        self.workspace.current_result=sim_result
+        try:
+            if active_exp:
+                db.save_observation(obs)
+                active_exp.attach_observation(obs)
+                self.workspace.observationCommitted.emit(obs)
+            else:
+                db.stage_observation(obs)
+                self.workspace.observationStaged.emit(obs)
+        except Exception as exc:
+            self.runFailed.emit(f"Result saved but experiment registration failed: {exc}")
+            return
+        finally:
+            db.close()
+        if self.workspace.active_experiment is active_exp:
+            self.workspace.current_result=sim_result
         self.runFinished.emit(sim_result)
     @Slot(str)
     def _failed(self,message):

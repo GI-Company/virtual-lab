@@ -33,6 +33,7 @@ def test_staged_prediction_follows_assignment(tmp_path):
                   AlphaFoldDBAdapter(lambda *a: b'[{"uniprotAccession":"P08100"}]'), tmp_path / "runs")
     observation = register(run, ledger, store)
     assert "P08100" in prediction_context(ledger, store, "")
+    store.save_experiment("new-experiment", "", "", "")
     store.assign_staged_to_experiment(observation.observation_id, "new-experiment")
     assert prediction_context(ledger, store, "") == ""
     assert "P08100" in prediction_context(ledger, store, "new-experiment")

@@ -83,14 +83,20 @@ def simulation_result_to_observation(
     artifact_path   = result.get("artifact_path", "")
     acquisition_utc = result.get("created_at", "")
 
-    from virtual_lab.domain.observation import NormalizedObservation
+    from virtual_lab.domain.observation import NormalizedObservation, PhysicalDimension
+    quantities = list(RHO_STATE_QUANTITIES)
+    if result.get('model_id', 'rho_p23h') != 'rho_p23h':
+        quantities = [QuantityDescriptor(semantic_name=s['semantic_name'] or result['model_id'] + ':' + s['key'],
+                      symbol=s['key'], description=s['label'], physical_dimension=PhysicalDimension(s.get('physical_dimension', 'DIMENSIONLESS')),
+                      units=s['units'], epistemic_state=EpistemicState.SIMULATED)
+                      for s in result['state_metadata']]
     return NormalizedObservation(
         observation_id=str(uuid.uuid4()),
         experiment_id=experiment_id,
         session_id=run_id,
         instrument_id="simulation",
         kind=ObservationKind.SIMULATION,
-        quantities=list(RHO_STATE_QUANTITIES),
+        quantities=quantities,
         artifact_path=artifact_path,
         artifact_sha256=artifact_sha256,
         acquisition_utc=acquisition_utc,

@@ -27,6 +27,10 @@ class SimulationResult:
     epistemic_state: EpistemicState
 
     execution_metadata: Dict[str, Any]
+    model_id: str = "rho_p23h"
+    model_label: str = "RHO P23H trafficking"
+    state_metadata: tuple = ()
+    control_trajectory: Optional[Dict[str, np.ndarray]] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "SimulationResult":
@@ -44,7 +48,11 @@ class SimulationResult:
         
         return cls(
             run_id=data.get("id", ""),
-            experiment_id=data.get("config", {}).get("compound", "Unknown"),
+            experiment_id=data.get("experiment_id", ""),
+            model_id=data.get("model_id", "rho_p23h"),
+            model_label=data.get("model_label", "RHO P23H trafficking"),
+            state_metadata=tuple(data.get("state_metadata") or _legacy_states()),
+            control_trajectory=_quantiles(data.get("control_quantiles", [])),
             times_h=np.array(data.get("times_h", [])),
             final_state=np.array(data.get("final_state", [])),
             summary_trajectory=summary_traj,
@@ -60,3 +68,16 @@ class SimulationResult:
                 "numpy_version": data.get("numpy_version", "")
             }
         )
+
+
+def _legacy_states():
+    from virtual_lab.models.registry import get_model
+    from dataclasses import asdict
+    return [asdict(s) for s in get_model('rho_p23h').states]
+
+
+def _quantiles(raw):
+    values = np.asarray(raw)
+    if values.ndim != 3:
+        return None
+    return {'p05': values[:, 0, :], 'median': values[:, 1, :], 'p95': values[:, 2, :]}

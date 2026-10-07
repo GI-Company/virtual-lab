@@ -11,7 +11,10 @@ class CellView(QWidget):
         workspace.resultChanged.connect(self.set_result);workspace.simulationTimeChanged.connect(self.render)
     def set_result(self,result):self.result=result;self.render(workspace_time=self.workspace.simulation_time_h)
     def render(self,workspace_time=0):
-        if not self.result:return
+        if not self.result or self.result.model_id != 'rho_p23h':
+            self.scene.clear()
+            self.note.setText("This RHO schematic requires a RHO simulation. Other models are shown in Analysis.")
+            return
         r=self.result;index=int(np.argmin(abs(np.asarray(r.times_h)-workspace_time)))
         values=r.summary_trajectory["median"][index];self.scene.clear()
         positions=[(0,40),(210,40),(420,40),(210,200),(420,200)]

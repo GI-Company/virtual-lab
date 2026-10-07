@@ -12,7 +12,7 @@ from urllib.request import Request, HTTPRedirectHandler, build_opener
 import numpy as np
 
 from .artifacts import write_json
-from .requests import GenomeRequest, StructureRequest
+from .requests import GenomeRequest, StructureRequest, BitVisionAuditRequest
 
 
 class InstrumentError(RuntimeError):
@@ -234,4 +234,7 @@ def adapter_for(request) -> InstrumentAdapter:
         return AlphaGenomeAdapter()
     if isinstance(request, StructureRequest):
         return AlphaFoldDBAdapter()
+    if isinstance(request, BitVisionAuditRequest):
+        from .bitvision import BitVisionAuditAdapter
+        return BitVisionAuditAdapter()
     raise ValueError("Unsupported instrument request.")

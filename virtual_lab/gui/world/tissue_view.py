@@ -46,13 +46,16 @@ class TissueView(QWidget):
         workspace.simulationTimeChanged.connect(self.render)
         
     def set_result(self, result):
-        self.result = result
+        self.result = result if result is not None and result.model_id == 'rho_p23h' else None
         self._update_plot()
         self.render(workspace_time=self.workspace.simulation_time_h)
         
     def _update_plot(self):
         self.plot.clear()
-        if not self.result: return
+        if not self.result:
+            self.lbl_current_onl.setText("RHO model only")
+            self.lbl_current_time.setText("—")
+            return
         r = self.result
         
         times = r.times_h
@@ -79,7 +82,10 @@ class TissueView(QWidget):
             self.plot.plot([times[0], times[-1]], [base_onl, base_onl], pen=pg.mkPen("#5c6d86", style=Qt.DashLine), name="Healthy Reference")
 
     def render(self, workspace_time=0):
-        if not self.result: return
+        if not self.result:
+            self.lbl_current_onl.setText("RHO model only")
+            self.lbl_current_time.setText("—")
+            return
         r = self.result
         
         index = int(np.argmin(abs(np.asarray(r.times_h) - workspace_time)))

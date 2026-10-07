@@ -9,6 +9,10 @@ class WorkspaceState(QObject):
     simulationTimeChanged = Signal(float)
     selectedEnsembleMemberChanged = Signal(int)
     resultChanged = Signal(object)
+    calibrationResultChanged = Signal(object)
+    biologicalResultChanged = Signal(object)
+    biologicalDraftRequested = Signal(object)
+    validationResultChanged = Signal(object)
     evidenceSelectionChanged = Signal(object)
     contextChanged = Signal(str)
     
@@ -69,4 +73,4 @@ class WorkspaceState(QObject):
     def active_experiment(self, value):
         if self._active_experiment != value:
             self._active_experiment = value
-            self.activeExperimentChanged.emit(value.id if value else None)
+            self.activeExperimentChanged.emit(value.id if value else "")

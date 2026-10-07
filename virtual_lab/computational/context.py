@@ -20,9 +20,21 @@ def prediction_context(ledger, store, experiment_id: str, limit: int = 5) -> str
         try:
             row = ledger.conn.execute("SELECT payload_json FROM ledger_events WHERE event_id = ?",
                                       ("COMPUTATIONAL-" + run_id,)).fetchone()
+            origin = "local prediction record"
             if row is None:
-                raise ValueError("Missing ledger anchor")
-            anchor = json.loads(row["payload_json"])
+                anchor = None
+                for imported in ledger.conn.execute("SELECT payload_json FROM ledger_events WHERE event_type='STUDY_IMPORTED' ORDER BY sequence DESC"):
+                    record = json.loads(imported['payload_json'])
+                    if record['experiment_id'] != experiment_id:
+                        continue
+                    anchor = next((o for o in record.get('observations', []) if o['observation_id'] == run_id), None)
+                    if anchor:
+                        break
+                if anchor is None:
+                    raise ValueError("Missing ledger anchor")
+                origin = "unsigned imported study; byte integrity only, publisher identity unverified"
+            else:
+                anchor = json.loads(row["payload_json"])
             if anchor["artifact_sha256"] != observation["artifact_sha256"]:
                 raise ValueError("Digest mismatch")
             manifest = CompletedRun(observation["artifact_path"], anchor["artifact_sha256"]).read()
@@ -33,7 +45,7 @@ def prediction_context(ledger, store, experiment_id: str, limit: int = 5) -> str
                 summary["outputs_total"] = len(summary["outputs"])
                 summary["outputs"] = summary["outputs"][:12]
             records.append({"run_id": run_id, "instrument": manifest["instrument"],
-                            "epistemic_state": "PREDICTED", "source": manifest["source"],
+                            "epistemic_state": "PREDICTED", "source": manifest["source"], "record_origin": origin,
                             "manifest_sha256": anchor["artifact_sha256"],
                             "hypothesis": manifest["request"]["hypothesis"],
                             "protocol": {k: v for k, v in manifest["request"].items() if k not in ("sequence", "hypothesis", "experiment_id")},

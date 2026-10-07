@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from virtual_lab.ai.credentials import CredentialService
 from virtual_lab.computational.artifacts import CompletedRun, register
-from virtual_lab.computational.requests import GenomeRequest, StructureRequest, LENGTHS, OUTPUTS
+from virtual_lab.computational.requests import GenomeRequest, StructureRequest, BitVisionAuditRequest, LENGTHS, OUTPUTS
 from virtual_lab.domain.experiment_store import ExperimentStore
 
 
@@ -45,6 +45,7 @@ class ComputationalWorkspace(QWidget):
         splitter.addWidget(scroll)
         self._genome_form()
         self._structure_form()
+        self._bitvision_form()
         right = QWidget()
         right_layout = QVBoxLayout(right)
         self.history = QComboBox()
@@ -195,6 +196,23 @@ class ComputationalWorkspace(QWidget):
         form.addRow(note)
         self.inputs.addTab(panel, "AlphaFold DB")
 
+    def _bitvision_form(self):
+        panel = QWidget()
+        form = QFormLayout(panel)
+        note = QLabel("Audit a local BitVision cell-simulator export and fingerprint its ONNX models. This does not run the policy or establish biological treatment effects.")
+        note.setWordWrap(True)
+        form.addRow(note)
+        self.bitvision_archive = QLineEdit()
+        self.bitvision_archive.setPlaceholderText("Absolute path to exported evaluation ZIP")
+        form.addRow("Evaluation ZIP", self.bitvision_archive)
+        self.bitvision_fp16 = QLineEdit()
+        self.bitvision_fp16.setPlaceholderText("Absolute path to FP16 ONNX model")
+        form.addRow("FP16 ONNX", self.bitvision_fp16)
+        self.bitvision_fp32 = QLineEdit()
+        self.bitvision_fp32.setPlaceholderText("Absolute path to FP32 ONNX model")
+        form.addRow("FP32 ONNX", self.bitvision_fp32)
+        self.inputs.addTab(panel, "BitVision audit")
+
     def _save_key(self):
         key = self.key_input.text().strip()
         if not key:
@@ -215,6 +233,10 @@ class ComputationalWorkspace(QWidget):
             return StructureRequest(accession=self.accession.text().strip().upper(),
                                     include_structure=self.include_structure.isChecked(),
                                     include_pae=self.include_pae.isChecked(), **common)
+        if self.inputs.currentIndex() == 2:
+            return BitVisionAuditRequest(archive_path=self.bitvision_archive.text().strip(),
+                                         fp16_path=self.bitvision_fp16.text().strip(),
+                                         fp32_path=self.bitvision_fp32.text().strip(), **common)
         operation = self.operation.currentData()
         variant = operation in ("variant", "score")
         return GenomeRequest(
@@ -248,7 +270,8 @@ class ComputationalWorkspace(QWidget):
         self.inputs.setEnabled(False)
         self.history.setEnabled(False)
         self.cancel_button.setEnabled(True)
-        self.status.setText("Running remote assay… Results will be recorded when the complete response is saved.")
+        self.status.setText("Auditing local simulator export…" if self.inputs.currentIndex() == 2 else
+                            "Running remote assay… Results will be recorded when the complete response is saved.")
         self.process = QProcess(self)
         self.process.setWorkingDirectory(str(Path(__file__).resolve().parents[2]))
         self.process.finished.connect(self._finished)
@@ -327,9 +350,10 @@ class ComputationalWorkspace(QWidget):
 
     def _refresh_history(self):
         self.history.clear()
-        # Only ledger-backed runs are presented as trusted saved predictions.
+        # Only ledger-backed runs are presented; evidence states retain their separate meanings.
         rows = self.ledger.conn.execute(
-            "SELECT payload_json FROM ledger_events WHERE event_type = 'COMPUTATIONAL_PREDICTION_RECORDED' ORDER BY sequence DESC"
+            "SELECT payload_json FROM ledger_events WHERE event_type IN "
+            "('COMPUTATIONAL_PREDICTION_RECORDED', 'SIMULATOR_AUDIT_RECORDED') ORDER BY sequence DESC"
         ).fetchall()
         for row in rows:
             record = json.loads(row["payload_json"])

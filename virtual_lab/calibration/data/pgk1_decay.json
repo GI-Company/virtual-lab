@@ -1,0 +1,53 @@
+{
+  "dataset_id": "Shalem2008-S1-PGK1-reference",
+  "title": "Yeast PGK1 mRNA decay after transcription shutoff",
+  "gene": "PGK1",
+  "systematic_id": "YCR012W",
+  "organism": "Saccharomyces cerevisiae",
+  "strain": "Y262 rpb1-1",
+  "condition": "Reference transcription arrest by temperature shift; no added chemical stress",
+  "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/2583085/bin/msb200859-s2.xls",
+  "download_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC2583085/supplementaryFiles",
+  "source_sha256": "61cff1ca27ddc854ff4fcd06493db00832cc5df530e6034f65ec6e5b7982ec06",
+  "source_sheet": "Sheet1",
+  "source_excel_row": 642,
+  "source_zero_based_columns": {
+    "train": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ],
+    "holdout": [
+      52,
+      53,
+      54,
+      55,
+      56,
+      57
+    ]
+  },
+  "citation": "Shalem et al. (2008), Molecular Systems Biology 4:223, doi:10.1038/msb.2008.59, Supplementary Table 1",
+  "paper_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC2583085/",
+  "geo_accession": "GSE12221",
+  "value_scale": "linear",
+  "processing": "Author-provided normalized relative abundance; baseline already scaled to one in the supplementary table.",
+  "split_rule": "Reference profile trains; reference2 (identified by authors as control) is held out. Fixed before fitting these curves.",
+  "selection_rule": "PGK1 was chosen before inspecting fit quality. Source switched from GEO intensities to explicit author-normalized curves to avoid unresolved preprocessing discrepancy, not to optimize holdout performance.",
+  "csv_sha256": "eb4a184dd79fe3ed47bddf3f430971cc8fe137559c7fda765c8d6ae997fd97a4",
+  "retrieved_at": "2026-09-26",
+  "author_training_half_life_min": 42.9088230524532,
+  "limitations": [
+    "A single gene and condition from one publication; no independent-laboratory validation.",
+    "Input values are author-processed relative abundances, not raw measurements or a new wet-lab experiment.",
+    "Each curve uses its own measured baseline. Baseline points are excluded from fit and metrics.",
+    "Held-out positive times span 5\u201330 minutes; training spans 5\u201360 minutes.",
+    "GEO intensity transformation was not reconciled with the supplement; this benchmark uses only the explicitly normalized supplemental curves.",
+    "No inferred protein, drug-response, human, or clinical parameters."
+  ]
+}
