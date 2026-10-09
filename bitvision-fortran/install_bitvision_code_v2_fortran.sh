@@ -947,7 +947,8 @@ contains
     end if
     call predict(prompt,t,conf)
     write(*,'(a,a,a,f5.1,a)')'[REQUEST] '//trim(prompt)//' -> ',trim(task_name(t)), &
-           ' confidence ',100*conf,'%'    if(conf<0.35_dp)then
+           ' confidence ',100*conf,'%'
+    if(conf<0.35_dp)then
        print '(a)','[ABSTAIN] Low confidence. Limited to 12 known integer tasks; no open-ended generation.'
        return
     end if
