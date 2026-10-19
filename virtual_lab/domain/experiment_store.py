@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from virtual_lab.domain.epistemics import EpistemicState, QualityState
+from virtual_lab.core.paths import app_data_dir
 from virtual_lab.domain.observation import (
     ExperimentObservation,
     ObservationKind,
@@ -47,14 +48,7 @@ from virtual_lab.domain.observation import (
 
 
 def _default_db_path() -> str:
-    data_dir = Path(
-        os.environ.get(
-            "VIRTUALLAB_DATA_DIR",
-            Path.home() / "Library/Application Support/VirtualLab/cockpit",
-        )
-    )
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return str(data_dir / "experiments.db")
+    return str(app_data_dir() / "experiments.db")
 
 
 def _serialize_quantities(quantities: List[QuantityDescriptor]) -> str:

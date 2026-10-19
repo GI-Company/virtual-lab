@@ -39,3 +39,10 @@ htmlcov/
 # VirtualLab specific
 data/
 .virtuallab/
+
+# OS / editor metadata
+.DS_Store
+Thumbs.db
+
+# Local runtime output
+*.log
