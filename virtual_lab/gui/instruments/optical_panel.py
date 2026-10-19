@@ -1,3 +1,4 @@
+from virtual_lab.core.paths import app_data_dir
 import time
 import json
 import os
@@ -313,18 +314,18 @@ class OpticalPanel(QWidget):
         if not self.frozen_frame:
             return
             
-        os.makedirs(".virtuallab/artifacts", exist_ok=True)
+        (app_data_dir() / "artifacts").mkdir(parents=True, exist_ok=True)
         capture_id = generate_id("CAP")
         jpeg_bytes = self.frozen_frame.jpeg_bytes
         img_hash = hash_bytes(jpeg_bytes)
         
         # 1. Save exact original JPEG
-        img_path = f".virtuallab/artifacts/{capture_id}.jpg"
+        img_path = str(app_data_dir() / "artifacts" / f"{capture_id}.jpg")
         with open(img_path, "wb") as f:
             f.write(jpeg_bytes)
             
         # 2. Save metadata JSON
-        meta_path = f".virtuallab/artifacts/{capture_id}.metadata.json"
+        meta_path = str(app_data_dir() / "artifacts" / f"{capture_id}.metadata.json")
         meta = {
             "source_device_id": self.frozen_frame.device_id,
             "camera_id": self.frozen_frame.camera_id,
@@ -345,7 +346,7 @@ class OpticalPanel(QWidget):
         analysis_hash = None
         analysis_id = None
         if hasattr(self, 'last_analysis_run') and self.last_analysis_run:
-            anl_path = f".virtuallab/artifacts/{self.last_analysis_run.analysis_run_id}.json"
+            anl_path = str(app_data_dir() / "artifacts" / f"{self.last_analysis_run.analysis_run_id}.json")
             anl_data = {
                 "analysis_run_id": self.last_analysis_run.analysis_run_id,
                 "algorithm": self.last_analysis_run.algorithm,

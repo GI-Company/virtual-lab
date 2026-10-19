@@ -1,61 +1,66 @@
-from __future__ import annotations
+"""Research runtime. AI is loaded only after an explicit user request."""
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from pathlib import Path
+from typing import Any
 
 from virtual_lab.core.ledger import GenesisLedger
+from virtual_lab.core.paths import app_data_dir
 from virtual_lab.gui.services.evidence_store import EvidenceStore
-from virtual_lab.ai.agent.tool_registry import ToolRegistry
-from virtual_lab.ai.agent.policy import PolicyEngine
-from virtual_lab.ai.agent.context import ScientificContextAssembler
-if TYPE_CHECKING:
-    from virtual_lab.ai.agent.gemma_backend import GemmaBackend
-from virtual_lab.ai.agent.controller import AgentController
 from virtual_lab.instruments.transport.gateway import InstrumentGateway
-from virtual_lab.ai.runtime_service import AgentRuntimeService
+
 
 @dataclass
 class VirtualLabRuntime:
     ledger: GenesisLedger
     evidence_store: EvidenceStore
-    tool_registry: ToolRegistry
-    policy_engine: PolicyEngine
-    context_assembler: ScientificContextAssembler
-    gemma_backend: Optional[GemmaBackend]
-    agent_controller: AgentController
     gateway: InstrumentGateway
-    agent_runtime: AgentRuntimeService
+    agent_runtime: Any = None
+    agent_controller: Any = None
+    tool_registry: Any = None
+    policy_engine: Any = None
+    context_assembler: Any = None
+    gemma_backend: Any = None
+    _closed: bool = False
 
-def create_virtual_lab_runtime(ledger_path: str = ".virtuallab/genesis.db") -> VirtualLabRuntime:
-    import os
-    os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
-    
-    ledger = GenesisLedger(ledger_path)
-    evidence_store = EvidenceStore()
-    
-    registry = ToolRegistry()
-    policy = PolicyEngine(registry, ledger)
-    assembler = ScientificContextAssembler(registry.get_all_schemas())
-    
-    backend = None
-    # We now use Vertex ADK Multi-Agent runner dynamically in LocalResearchWorkspace
-    from virtual_lab.ai.agent.genesis_adapter import AgentGenesisRecorder
-    agent_genesis = AgentGenesisRecorder(ledger)
-        
-    controller = AgentController(registry, policy, assembler, agent_genesis, model_backend=backend)
-    
-    gateway = InstrumentGateway(ledger=ledger, port=8765)
-    gateway.start()
+    def enable_ai(self):
+        if self._closed:
+            raise RuntimeError("The research workspace is closed.")
+        if self.agent_runtime is not None:
+            return self.agent_runtime
+        from virtual_lab.ai.runtime_service import AgentRuntimeService
+        from virtual_lab.ai.agent.tool_registry import ToolRegistry
+        from virtual_lab.ai.agent.policy import PolicyEngine
+        from virtual_lab.ai.agent.context import ScientificContextAssembler
+        from virtual_lab.ai.agent.controller import AgentController
+        from virtual_lab.ai.agent.genesis_adapter import AgentGenesisRecorder
 
-    agent_runtime = AgentRuntimeService()
+        registry = ToolRegistry()
+        recorder = AgentGenesisRecorder(self.ledger)
+        policy = PolicyEngine(registry, recorder)
+        assembler = ScientificContextAssembler(registry.get_all_schemas())
+        controller = AgentController(registry, policy, assembler, recorder, model_backend=None)
+        runtime = AgentRuntimeService()
+        self.tool_registry, self.policy_engine = registry, policy
+        self.context_assembler, self.agent_controller = assembler, controller
+        self.agent_runtime = runtime
+        return runtime
 
-    return VirtualLabRuntime(
-        ledger=ledger,
-        evidence_store=evidence_store,
-        tool_registry=registry,
-        policy_engine=policy,
-        context_assembler=assembler,
-        gemma_backend=backend,
-        agent_controller=controller,
-        gateway=gateway,
-        agent_runtime=agent_runtime
-    )
+    def shutdown(self):
+        if self._closed:
+            return
+        self.gateway.stop()
+        if self.agent_runtime is not None:
+            self.agent_runtime.shutdown()
+        self.ledger.conn.close()
+        self._closed = True
+
+
+def create_virtual_lab_runtime(ledger_path=None):
+    path = Path(ledger_path) if ledger_path is not None else app_data_dir() / "genesis.db"
+    ledger = GenesisLedger(str(path))
+    try:
+        # The hardware listener is started only when the Instruments tab is opened.
+        return VirtualLabRuntime(ledger, EvidenceStore(), InstrumentGateway(ledger=ledger, port=8765))
+    except BaseException:
+        ledger.conn.close()
+        raise

@@ -5,7 +5,8 @@ from virtual_lab.core.ledger import GenesisLedger, Actor
 
 class RunStore:
     def __init__(self, root=None):
-        self.root = Path(root or os.environ.get("VIRTUALLAB_DATA_DIR", Path.home()/"Library/Application Support/VirtualLab/cockpit"))
+        from virtual_lab.core.paths import app_data_dir
+        self.root = Path(root) if root is not None else app_data_dir()
 
     def save(self, result):
         self.root.mkdir(parents=True, exist_ok=True)

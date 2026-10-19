@@ -33,8 +33,8 @@ class StudyService:
 
     def create_project(self, name):
         name = name.strip()
-        if not name:
-            raise ValueError("Enter a project name.")
+        if not name or len(name) > 200:
+            raise ValueError("Enter a project name of at most 200 characters.")
         project_id = str(uuid.uuid4())
         with self.store._conn:
             self.store._conn.execute("INSERT INTO projects VALUES (?, ?, ?)",
@@ -44,8 +44,8 @@ class StudyService:
 
     def create_experiment(self, project_id, label, question):
         label, question = label.strip(), question.strip()
-        if not label or not question:
-            raise ValueError("Enter an experiment name and research question.")
+        if not label or not question or len(label) > 200 or len(question) > 8000:
+            raise ValueError("Enter an experiment name (up to 200 characters) and research question (up to 8000 characters).")
         if not any(p['id'] == project_id for p in self.projects()):
             raise ValueError("Select a project first.")
         exp = VirtualExperiment("", "", "", label=label)
@@ -77,7 +77,7 @@ class StudyService:
 
     def update_question(self, question):
         exp = self.workspace.active_experiment
-        if exp is None or not question.strip():
+        if exp is None or not question.strip() or len(question.strip()) > 8000:
             raise ValueError("Open an experiment and enter a research question.")
         with self.store._conn:
             self.store._conn.execute('UPDATE experiments SET research_question=? WHERE id=?', (question.strip(), exp.id))
@@ -88,6 +88,107 @@ class StudyService:
         row = self.store._conn.execute("SELECT value FROM workspace_settings WHERE key='active_experiment'").fetchone()
         if row and self.store.get_experiment(row[0]):
             self.activate(row[0])
+
+    def research_records(self, experiment_id=None):
+        experiment_id = experiment_id or getattr(self.workspace.active_experiment, 'id', '')
+        return [(obs, self.inspect(obs)) for obs in self.store.get_observations_for_experiment(experiment_id)
+                if obs.instrument_id in ('research_plan', 'research_conclusion')]
+
+    def save_research_plan(self, hypothesis, method, expected_outcome, acceptance_criteria):
+        return self._save_research_record('plan', dict(hypothesis=hypothesis, method=method,
+            expected_outcome=expected_outcome, acceptance_criteria=acceptance_criteria))
+
+    def save_research_conclusion(self, interpretation, limitations, decision, observation_ids):
+        exp = self.workspace.active_experiment
+        if exp is None:
+            raise ValueError('Open an experiment first.')
+        plans = [(obs, value) for obs, value in self.research_records(exp.id) if value['record_type'] == 'plan']
+        if not plans:
+            raise ValueError('Save a research plan before recording a conclusion.')
+        plan, plan_value = plans[-1]
+        if plan_value['research_question'] != exp.research_question:
+            raise ValueError('The research question changed. Save an updated plan first.')
+        observations = {obs.observation_id: obs for obs in self.store.get_observations_for_experiment(exp.id)}
+        if not observation_ids or len(set(observation_ids)) != len(observation_ids):
+            raise ValueError('Select one or more distinct saved results as evidence.')
+        references = []
+        from datetime import datetime
+        before_results = True
+        for observation_id in observation_ids:
+            obs = observations.get(observation_id)
+            if obs is None or obs.instrument_id in ('research_plan', 'research_conclusion'):
+                raise ValueError('Evidence must be a saved result in this experiment.')
+            self.inspect(obs)
+            before_results &= datetime.fromisoformat(obs.acquisition_utc) >= datetime.fromisoformat(plan_value['created_at'])
+            references.append({'observation_id': obs.observation_id, 'sha256': obs.artifact_sha256})
+        return self._save_research_record('conclusion', dict(interpretation=interpretation,
+            limitations=limitations, decision=decision), plan_ref={'observation_id': plan.observation_id,
+            'sha256': plan.artifact_sha256}, result_refs=references,
+            planning_scope='before_selected_results' if before_results else 'retrospective')
+
+    def _save_research_record(self, record_type, content, **references):
+        from virtual_lab.domain.research import ResearchRecord
+        from virtual_lab.domain.observation import NormalizedObservation, ObservationKind
+        from virtual_lab.domain.epistemics import EpistemicState
+        exp = self.workspace.active_experiment
+        if exp is None:
+            raise ValueError('Open an experiment first.')
+        if any(not isinstance(value, str) or not value.strip() or len(value.strip()) > 8000 for value in content.values()):
+            raise ValueError('Complete each research record field using at most 8000 characters.')
+        record = ResearchRecord(id=str(uuid.uuid4()), experiment_id=exp.id,
+            record_type=record_type, research_question=exp.research_question,
+            created_at=datetime.now(timezone.utc).isoformat(), content=content,
+            epistemic_state='MODEL_ASSUMPTION' if record_type == 'plan' else 'INFERRED', **references)
+        raw = record.model_dump_json().encode()
+        sha = hashlib.sha256(raw).hexdigest()
+        root = data_root() / 'research-records'
+        root.mkdir(parents=True, exist_ok=True)
+        target = root / (sha + '.json')
+        # A content-addressed record is append-only. Existing bytes are checked.
+        try:
+            with target.open('xb') as stream:
+                stream.write(raw)
+        except FileExistsError:
+            if target.read_bytes() != raw:
+                raise ValueError('Research record artifact conflict.')
+        obs = NormalizedObservation(observation_id=record.id, experiment_id=exp.id,
+            session_id=record.id, instrument_id='research_' + record_type,
+            kind=ObservationKind.RESEARCH_RECORD, quantities=[], artifact_path=str(target),
+            artifact_sha256=sha, acquisition_utc=record.created_at,
+            epistemic_state=EpistemicState(record.epistemic_state),
+            notes='Human-authored research record; not a measurement or automated validation.')
+        self._event('RESEARCH_' + record_type.upper() + '_SAVED', {'experiment_id': exp.id,
+            'record_id': record.id, 'artifact_sha256': sha, 'artifact_path': str(target)})
+        self.store.save_observation(obs)
+        exp.attach_observation(obs)
+        self.workspace.observationCommitted.emit(obs)
+        return obs
+
+    @staticmethod
+    def _verify_research_links(observations):
+        """Cross-check citations before export/import changes durable state."""
+        lookup = {o.observation_id: o for o in observations}
+        for obs in observations:
+            if obs.instrument_id != 'research_conclusion':
+                continue
+            from virtual_lab.domain.research import ResearchRecord
+            record = ResearchRecord.model_validate(StudyService.inspect(obs))
+            for reference in [record.plan_ref, *record.result_refs]:
+                linked = lookup.get(reference.observation_id)
+                if linked is None or linked.experiment_id != obs.experiment_id or linked.artifact_sha256 != reference.sha256:
+                    raise ValueError('Research record has a missing or mismatched evidence reference.')
+            plan = lookup[record.plan_ref.observation_id]
+            if plan.instrument_id != 'research_plan':
+                raise ValueError('Conclusion references an invalid research plan.')
+            plan_value = StudyService.inspect(plan)
+            if plan_value['research_question'] != record.research_question:
+                raise ValueError('Conclusion and plan research questions disagree.')
+            if any(lookup[r.observation_id].instrument_id in ('research_plan', 'research_conclusion') for r in record.result_refs):
+                raise ValueError('A research conclusion cannot substitute notes for result evidence.')
+            scope = 'before_selected_results' if all(datetime.fromisoformat(lookup[r.observation_id].acquisition_utc)
+                >= datetime.fromisoformat(plan_value['created_at']) for r in record.result_refs) else 'retrospective'
+            if scope != record.planning_scope:
+                raise ValueError('Research plan timing metadata disagrees with selected results.')
 
     def save_calibration(self, result):
         from virtual_lab.domain.observation import NormalizedObservation, ObservationKind, QuantityDescriptor, PhysicalDimension
@@ -230,7 +331,29 @@ class StudyService:
             if result['run_id'] != obs.session_id or result['epistemic_state'] != obs.epistemic_state.value:
                 raise ValueError("Result identity mismatch.")
             return result
+        if obs.kind.value == 'RESEARCH_RECORD' and obs.instrument_id not in ('research_plan', 'research_conclusion'):
+            raise ValueError('Unsupported research record identity.')
+        if (obs.kind.value in ('SENSOR_STREAM', 'CAMERA_FRAME', 'MICROSCOPY', 'SPECTROSCOPY', 'ELECTROCHEMISTRY')
+                and obs.instrument_id not in ('simulation', 'biological_system', 'decay_calibration',
+                    'maturation_validation', 'research_plan', 'research_conclusion')):
+            return {'format': 'raw-artifact-reference', 'artifact_file': path.name,
+                'artifact_sha256': obs.artifact_sha256, 'observation_id': obs.observation_id,
+                'experiment_id': obs.experiment_id, 'instrument_id': obs.instrument_id,
+                'epistemic_state': obs.epistemic_state.value, 'sample_count': obs.sample_count,
+                'quantities': [{'name': q.semantic_name, 'units': q.units,
+                    'epistemic_state': q.epistemic_state.value} for q in obs.quantities],
+                'verification_scope': 'Artifact bytes verified; raw measurements are not automatically analyzed or validated.'}
         result = json.loads(path.read_text())
+        if obs.instrument_id in ('research_plan', 'research_conclusion'):
+            from virtual_lab.domain.research import ResearchRecord
+            parsed = ResearchRecord.model_validate(result)
+            if (parsed.id != obs.observation_id or parsed.id != obs.session_id
+                    or parsed.experiment_id != obs.experiment_id
+                    or parsed.epistemic_state != obs.epistemic_state.value
+                    or parsed.created_at != obs.acquisition_utc
+                    or obs.kind.value != 'RESEARCH_RECORD'
+                    or obs.instrument_id != 'research_' + parsed.record_type):
+                raise ValueError('Research record identity mismatch.')
         if obs.instrument_id == 'maturation_validation':
             from virtual_lab.validation.maturation import validate_report
             validate_report(result)
@@ -248,9 +371,32 @@ class StudyService:
                     or result.get('id') != obs.session_id or result.get('experiment_id') != obs.experiment_id
                     or result.get('epistemic_state') != obs.epistemic_state.value):
                 raise ValueError('Calibration identity mismatch.')
-        if obs.instrument_id == 'simulation' and result['id'] != obs.session_id:
-            raise ValueError("Simulation identity mismatch.")
+        if obs.instrument_id == 'simulation':
+            if result['id'] != obs.session_id:
+                raise ValueError("Simulation identity mismatch.")
+            if result.get('schema_version') == 2:
+                from virtual_lab.gui.services.research_outputs import simulation_arrays
+                simulation_arrays(result)
+                if (obs.epistemic_state.value != 'SIMULATED' or obs.kind.value != 'SIMULATION'
+                        or result.get('experiment_id', '') not in ('', obs.experiment_id)
+                        or result['created_at'] != obs.acquisition_utc):
+                    raise ValueError('Simulation metadata disagrees with its saved artifact.')
         return result
+
+    def export_result_csv(self, observation_id, destination):
+        from virtual_lab.gui.services.research_outputs import simulation_csv, publish_new_file
+        exp = self.workspace.active_experiment
+        if exp is None:
+            raise ValueError('Open an experiment first.')
+        obs = next((o for o in self.store.get_observations_for_experiment(exp.id)
+                    if o.observation_id == observation_id), None)
+        if obs is None or obs.instrument_id != 'simulation':
+            raise ValueError('Select a saved simulation to export trajectory data.')
+        destination = Path(destination).expanduser()
+        if destination.suffix != '.csv':
+            raise ValueError('Use a filename ending in .csv.')
+        result = self.inspect(obs)
+        return publish_new_file(destination, simulation_csv(dict(result, experiment_id=obs.experiment_id)))
 
     def export_study(self, destination):
         exp = self.workspace.active_experiment
@@ -262,6 +408,7 @@ class StudyService:
             raise ValueError("This experiment needs a project before it can be shared.")
         rows = [dict(r) for r in self.store._conn.execute(
             "SELECT * FROM observations WHERE experiment_id=? ORDER BY acquisition_utc", (exp.id,))]
+        self._verify_research_links(self.store.get_observations_for_experiment(exp.id))
         files = {}
         for i, obs in enumerate(self.store.get_observations_for_experiment(exp.id)):
             result = self.inspect(obs)
@@ -288,7 +435,11 @@ class StudyService:
                 bundle.writestr('study.json', json.dumps(snapshot, sort_keys=True, allow_nan=False))
                 for name, raw in files.items():
                     bundle.writestr(name, raw)
-            temporary.replace(destination)
+            try:
+                import os
+                os.link(temporary, destination)
+            except FileExistsError:
+                raise ValueError("Choose a new filename; existing packages are preserved.") from None
         finally:
             temporary.unlink(missing_ok=True)
         self._event('STUDY_EXPORTED', {'experiment_id': exp.id, 'sha256': digest(destination)})
@@ -348,6 +499,7 @@ class StudyService:
                 if row['instrument_id'] == 'biological_system':
                     from virtual_lab.biology.simulation import BiologicalRun
                     biological[result['id']] = BiologicalRun.model_validate(result).model_dump(mode='json')
+            self._verify_research_links([self.store._row_to_obs(row) for row in rows])
             for result in biological.values():
                 parent = result['initial_system']['last_result_id']
                 if parent and (parent not in biological or biological[parent]['final_system'] != result['initial_system']):

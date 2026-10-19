@@ -4,10 +4,11 @@ The Projects workspace supports research questions independent of the built-in R
 
 1. Create a named project.
 2. Enter an experiment name and research question, then create and open it.
-3. Choose a registered model in Simulation, or run AlphaGenome or AlphaFold DB in Computational Biology. New results attach to the experiment selected at submission, even if selection changes while the request runs.
+3. Save a hypothesis, method/controls, expected outcome and decision criteria in **Research plan**. Then choose a registered model in Simulation, or run AlphaGenome or AlphaFold DB in Computational Biology. New results attach to the experiment selected at submission, even if selection changes while the request runs.
 4. Use Projects to attach older unassigned results, inspect saved protocols and outputs, and verify artifact hashes.
 5. Reopen the app to restore the active experiment. Select a saved simulation to restore its analysis; switching experiments clears the prior analysis.
-6. Enter an absolute path ending in `.vlab-study` and export. A recipient can paste that path or drag a local study file into the path field, then import.
+6. Use **Conclusion** to record a human interpretation and limitations, explicitly select supporting results, and save the scoped decision. Numerical run comparisons and trajectory CSV export require no AI. See the [manual walkthrough](manual-research.md).
+7. Enter an absolute path ending in `.vlab-study` and export. A recipient can paste that path or drag a local study file into the path field, then import.
 
 Study exchange uses an inline path field because Qt 6.11's macOS accessibility bridge crashed during QFileDialog traversal on the tested macOS 27 system. No accessibility or system security protections are disabled.
 
@@ -24,7 +25,7 @@ This is an unsigned research snapshot, separate from legacy signed `.vlab` bundl
 - The experiment schema migrates existing databases additively. Legacy observations without file references remain visible but cannot pass export verification.
 - Project/experiment switching, assignment, export/import, and simulation artifact ownership have regression coverage.
 - Study packages are capped at 100 MB and 1,000 entries. Version 1 supports a snapshot import into a separate workspace; merging existing experiments is not supported.
-- The wider legacy application's working-directory-dependent runtime ledger and version consistency still need normalization before a production release.
+- Current runtime, results, databases and instrument files share a stable cross-platform application data directory. Older working-directory files are retained separately; see the manual walkthrough.
 
 ## Local verification
 
@@ -33,6 +34,6 @@ QT_QPA_PLATFORM=offscreen python -m pytest tests/projects tests/computational te
 python -m pip wheel --no-deps --wheel-dir dist .
 ```
 
-The cockpit extra now declares the tested Vertex ADK, system monitor, and WebSocket dependencies. The build explicitly includes the `virtual_lab` namespace package.
+The cockpit extra declares the desktop, system monitor and WebSocket dependencies. Vertex ADK and Google GenAI are isolated in the optional `ai` extra. The build explicitly includes the `virtual_lab` namespace package.
 
 See [measurement calibration](calibration.md) for the separate published-data fitting and held-out evaluation workflow.

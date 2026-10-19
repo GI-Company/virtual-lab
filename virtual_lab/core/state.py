@@ -11,8 +11,8 @@ class WorkspaceState:
         self.active_experiment_id: Optional[str] = None
         
         # Initialize the global Genesis Ledger
-        os.makedirs(".virtuallab", exist_ok=True)
-        self.ledger = GenesisLedger(".virtuallab/genesis.db")
+        from virtual_lab.core.paths import app_data_dir
+        self.ledger = GenesisLedger(str(app_data_dir() / "genesis.db"))
         
     def add_experiment(self, experiment: VirtualExperiment):
         self.experiments[experiment.id] = experiment

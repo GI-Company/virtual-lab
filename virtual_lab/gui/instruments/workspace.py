@@ -1,3 +1,4 @@
+from virtual_lab.core.paths import app_data_dir
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                                QPushButton, QGroupBox, QSplitter, QFrame, QComboBox, QStackedWidget, QTabWidget, QScrollArea)
 from PySide6.QtCore import Qt, QTimer
@@ -837,8 +838,8 @@ class InstrumentsWorkspace(QWidget):
                 sha256 = hashlib.sha256(jpeg_bytes).hexdigest()
                 capture_id = f"CAP-{int(time.time()*1000)}"
                 
-                os.makedirs(".virtuallab/artifacts", exist_ok=True)
-                artifact_path = f".virtuallab/artifacts/{capture_id}.jpg"
+                (app_data_dir() / "artifacts").mkdir(parents=True, exist_ok=True)
+                artifact_path = str(app_data_dir() / "artifacts" / f"{capture_id}.jpg")
                 with open(artifact_path, "wb") as f:
                     f.write(jpeg_bytes)
                     
@@ -1076,7 +1077,9 @@ class InstrumentsWorkspace(QWidget):
 
     def _start_session(self):
         dt_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.current_session = f"SES-{dt_str}"
+        import uuid
+        self.current_session = f"SES-{dt_str}-{uuid.uuid4().hex[:8]}"
+        self._session_experiment = self.workspace.active_experiment
         self.gateway.set_active_session(self.current_session)
         
         metadata = {
@@ -1145,19 +1148,22 @@ class InstrumentsWorkspace(QWidget):
             from virtual_lab.domain.assemblers import session_commit_to_observation
             from virtual_lab.domain.experiment_store import ExperimentStore
             
-            active_exp = self.workspace.active_experiment
+            active_exp = self._session_experiment
             exp_id_for_obs = active_exp.id if active_exp else ""
             obs = session_commit_to_observation(commit_result, exp_id_for_obs)
             
             db = ExperimentStore()
-            if active_exp:
-                active_exp.attach_observation(obs)
-                db.save_observation(obs)
-                self.workspace.observationCommitted.emit(obs)
-            else:
-                db.stage_observation(obs)
-                self.workspace.observationStaged.emit(obs)
-            
+            try:
+                if active_exp:
+                    db.save_observation(obs)
+                    active_exp.attach_observation(obs)
+                    self.workspace.observationCommitted.emit(obs)
+                else:
+                    db.stage_observation(obs)
+                    self.workspace.observationStaged.emit(obs)
+            finally:
+                db.close()
+
         self.current_session = None
         self._update_ui()
 

@@ -2,6 +2,12 @@
 
 VirtualLab connects mechanistic simulations, physical instruments, AlphaGenome predictions, individual AlphaFold DB lookups, and Vertex AI research within one evidence and provenance model. AlphaFold access is on demand; no database mirror or local inference installation is required.
 
+**AI is optional.** Researchers can create a project, save a manual research plan,
+run and compare simulations, export CSV, record an evidence-linked conclusion,
+and export/reopen the complete study without AI packages, credentials or services.
+Install `.[cockpit]` and launch with `python -m virtual_lab.main`. Start with the
+[manual research walkthrough](docs/manual-research.md).
+
 [![Version](https://img.shields.io/badge/version-1.0.0--beta.1-blue.svg)](release_manifest.json)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
@@ -110,7 +116,7 @@ The current PySide6 main window exposes 13 top-level tabs:
 4. **Simulation**: Configure and run the implemented mechanistic simulation.
 5. **Analysis**: Inspect simulation trajectories and plots.
 6. **Calibration**: RNA decay and maturation validation views, each in a nested tab.
-7. **Local Research Mode**: Assemble research context and review AI-generated next-step proposals with Vertex credentials.
+7. **AI assistance (optional)**: Explicitly enable optional assistance after installing the `ai` extra; manual research remains available without it.
 8. **Instruments**: Inspect connections, sensor streams, camera data, and controls.
 9. **Computational Biology**: Run AlphaGenome assays, look up individual AlphaFold DB records, and audit BitVision simulator outputs.
 10. **Evidence**: Review saved evidence and its epistemic classification.
@@ -191,7 +197,7 @@ To install the desktop cockpit (GUI), chemical informatics (RDKit), and plotting
 ```bash
 pip install -e ".[cockpit,dev]"
 ```
-*(Or install via `pip install -r requirements-cockpit.txt`)*
+*(The compatibility file `requirements-cockpit.txt` installs the same `cockpit,dev` extras.)*
 
 To enable AlphaGenome, install the computational biology dependencies as well:
 ```bash
@@ -234,10 +240,10 @@ devices on a network that permits TCP port 8765 and mDNS discovery.
 
 ### Configuring Vertex AI
 
-The desktop agent uses Vertex AI. Choose one authentication mode before
-launching VirtualLab:
+The desktop agent uses Vertex AI. Install `.[ai]`, explicitly enable **AI assistance (optional)**, then choose an
+authentication mode when using assistance. The manual workflow needs none of these credentials:
 
-For express mode, you can paste a key into **Local Research Mode → Vertex
+For express mode, you can paste a key into **AI assistance (optional) → Vertex
 express-mode API key for this session → Use key**. The field is masked, clears
 after use, and keeps the key only in the running desktop process. Enter it
 again after restarting the app.
@@ -268,14 +274,14 @@ can be configured separately under `~/.lmstudio/models/`.
 ### 1. Verify a `.vlab` Research Bundle
 Verify the cryptographic signature, hash chain continuity, zip archive safety, and scientific DAG invariants of any `.vlab` bundle:
 ```bash
-python3 -m virtual_lab.cli.verify pristine.vlab
+python3 -m virtual_lab.cli.verify tests/fixtures/vlab/pristine.vlab
 ```
 Output:
 ```text
 ==================================================
   VIRTUAL LAB: EPISTEMIC PROVENANCE REPORT
 ==================================================
-Bundle: pristine.vlab
+Bundle: tests/fixtures/vlab/pristine.vlab
 Format version: 1.0
 Build timestamp (UTC): 2026-09-18T12:00:00Z
 Artifacts verified: 2/2 (all SHA-256 match)
@@ -307,23 +313,23 @@ package_vlprogram('virtual_lab/diseases/rho_p23h', 'rho_p23h.vlprogram')
 
 ## Testing & Quality Assurance
 
-The release regression suite covers projects, computational adapters and artifact checks, core provenance, instruments, protocol, and selected headless GUI tests. GitHub CI runs it on Python 3.10, 3.11, and 3.12 with `QT_QPA_PLATFORM=offscreen`. Kotlin interop runs when Gradle is installed; live cloud, external-service, and MLX/Metal acceptance require separate credentials or hardware and are not included in core CI. [release_manifest.json](release_manifest.json) records the actual Python 3.12 regression and build snapshot.
+The default regression suite lives under `tests/` and covers biology, calibration, projects, computational adapters, AI policy and offline routing, provenance, instruments, protocol, and headless GUI tests. GitHub CI runs it on Python 3.10, 3.11, and 3.12 with `QT_QPA_PLATFORM=offscreen`. Kotlin interop runs when Gradle is installed. Live cloud tests require `VIRTUALLAB_RUN_LIVE_AI_TESTS=1`; MLX tests require `VIRTUALLAB_RUN_MLX_TESTS=1` and their hardware dependencies. Neither runs by default or in core CI. [release_manifest.json](release_manifest.json) records the latest local regression and wheel build snapshot; it does not certify remote CI runs.
 
 ### Run Unit and Domain Tests
 ```bash
-PYTHONPATH=. pytest virtual_lab/test_ledger.py virtual_lab/test_matter.py virtual_lab/test_biological.py
+python3 -m pytest
 ```
 
 ### Run Adversarial Cryptographic Verification Tests
 Tests defense against zip path traversal attacks, genesis event alterations, artifact byte corruption, and signature tampering:
 ```bash
-bash scripts/verify_acceptance.sh
+python3 -m scripts.verify_acceptance
 ```
 
 ### Run Model Benchmarks (Apple Silicon)
 Benchmark local unified memory context consumption and prefill latency:
 ```bash
-python3 run_benchmark.py
+VIRTUALLAB_LOCAL_MODEL=/absolute/path/to/checkpoint python3 -m scripts.benchmarks.gemma_context
 ```
 
 ---
@@ -342,6 +348,12 @@ When developing modules or extending VirtualLab:
 ## License
 
 No license has been declared in this repository. The owner must choose and add licensing terms before describing it as open source or inviting redistribution.
+
+## Development layout
+
+See [package boundaries and development layout](docs/architecture.md) for the
+scientific and transport layers, generated disease programs, test layout,
+dependency ownership, and optional validation commands.
 
 ## Virtual mass spectrometry (precursor isotope envelope)
 
@@ -367,7 +379,7 @@ spectra; simulated peaks must remain separate from measured evidence.
 
 ## Guided autonomous research in the desktop cockpit
 
-In **Local Research Mode**, enter a disease question and select **Research next
+After explicitly enabling **AI assistance (optional)**, enter a disease question and select **Research next
 step**. The Director receives up to 30 project evidence leads, delegates source
 checking to the Research Agent and claim review to the Integrity Agent, then
 requests competing falsifiable hypotheses, a discriminating simulation, and a

@@ -26,6 +26,8 @@ import asyncio
 import pytest
 from typing import AsyncGenerator
 
+pytest.importorskip("google.adk", reason="Optional ai extra is not installed")
+
 from google.genai import types
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
@@ -34,6 +36,12 @@ from google.adk import Runner
 
 import virtual_lab.ai.vertex_agents as va
 from virtual_lab.ai.vertex_agents import get_agent_system, AgentHandoff
+
+
+@pytest.fixture(autouse=True)
+def offline_agent_model(monkeypatch):
+    from google.adk.models.google_llm import Gemini
+    monkeypatch.setattr(va, "get_default_model", lambda: Gemini(model="offline-test"))
 
 
 from virtual_lab.gateway.adk_tools import (

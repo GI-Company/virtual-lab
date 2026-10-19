@@ -1,15 +1,59 @@
 {
   "version": "1.0.0-beta.1",
-  "generated_utc": "2026-10-07T02:47:38+00:00",
-  "test_suite": "Core, GUI regression, instruments, protocol, projects, computational biology",
+  "generated_utc": "2026-10-19T17:39:39+00:00",
+  "test_suite": "Default manual research regression suite without Google AI SDKs (macOS native Qt)",
   "test_result_source": "pytest JUnit XML",
-  "tests_total": 144,
-  "tests_passed": 142,
+  "tests_total": 375,
+  "tests_passed": 362,
   "tests_failed": 0,
   "tests_errors": 0,
-  "tests_skipped": 2,
+  "tests_skipped": 13,
   "tests_xfailed": 0,
   "skipped_cases": [
+    {
+      "test": ".tests.ai.test_request_gate",
+      "reason": "collection skipped"
+    },
+    {
+      "test": ".tests.ai.test_vertex_adk_integration",
+      "reason": "collection skipped"
+    },
+    {
+      "test": ".tests.computational.test_vertex_runtime",
+      "reason": "collection skipped"
+    },
+    {
+      "test": ".tests.hardware.test_beta_workflow",
+      "reason": "collection skipped"
+    },
+    {
+      "test": ".tests.hardware.test_gemma_multimodal",
+      "reason": "collection skipped"
+    },
+    {
+      "test": ".tests.hardware.test_metal_equivalence",
+      "reason": "collection skipped"
+    },
+    {
+      "test": ".tests.hardware.test_restart_reproducibility",
+      "reason": "collection skipped"
+    },
+    {
+      "test": "tests.ai.test_beta_live.test_live_gemini_e2e",
+      "reason": "Live Gemini E2E tests require VIRTUALLAB_RUN_LIVE_AI_TESTS=1"
+    },
+    {
+      "test": "tests.ai.test_gemini_live.test_gemini_structured_output",
+      "reason": "Set VIRTUALLAB_RUN_LIVE_AI_TESTS=1 for live cloud tests"
+    },
+    {
+      "test": "tests.computational.test_instruments.test_variant_arrays_and_annotation_round_trip",
+      "reason": "could not import 'pandas': No module named 'pandas'"
+    },
+    {
+      "test": "tests.computational.test_instruments.test_remote_errors_do_not_expose_authentication",
+      "reason": "could not import 'alphagenome': No module named 'alphagenome'"
+    },
     {
       "test": "tests.protocol.test_interop.test_python_kotlin_canonical_interop",
       "reason": "Gradle is required for Kotlin interop"
@@ -23,12 +67,12 @@
     "live cloud API / external-service acceptance",
     "MLX/Metal hardware tests"
   ],
-  "python_version": "3.12.14",
+  "python_version": "3.14.8",
   "platform": "Darwin",
   "architecture": "arm64",
   "build": {
     "status": "passed",
     "artifact": "virtual_lab-1.0.0b1-py3-none-any.whl",
-    "sha256": "e35caed05cd337839458e73860cf28c1f4fc2b440491b0b75a894451bd2d2f71"
+    "sha256": "13d33823fe3536705ff8151a5194329f61fc0082d3a9a9bdc8ec6fc31374cc39"
   }
 }

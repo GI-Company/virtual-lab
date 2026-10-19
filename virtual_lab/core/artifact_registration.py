@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 class ArtifactRegistrationService:
     def __init__(self, ledger: GenesisLedger):
         self.ledger = ledger
-        self.artifacts_dir = os.path.abspath(os.path.join(os.getcwd(), ".virtuallab", "artifacts"))
+        from virtual_lab.core.paths import app_data_dir
+        self.artifacts_dir = str(app_data_dir() / "artifacts")
         os.makedirs(self.artifacts_dir, exist_ok=True)
 
     def _create_rejection(self, request: ArtifactRegister, reason: str, error_message: str, claimed_sha: Optional[str] = None) -> str:

@@ -1,6 +1,8 @@
 import asyncio
 import pytest
 
+pytest.importorskip("google.adk", reason="Optional ai extra is not installed")
+
 from google.adk.models.google_llm import Gemini
 from virtual_lab.ai.request_gate import GatedGemini, ModelRequestGate
 

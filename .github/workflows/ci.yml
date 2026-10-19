@@ -23,24 +23,36 @@ jobs:
       - name: Install runtime and test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[cockpit,dev]'
+          python -m pip install -e '.[cockpit,ai,dev]'
       - name: Run release regression suite
         run: |
-          python -m pytest tests/projects tests/computational tests/core tests/instruments tests/protocol \
-            virtual_lab/test_matter.py virtual_lab/test_biological.py \
-            virtual_lab/test_analysis.py virtual_lab/test_workspace_state.py \
-            virtual_lab/test_world_selection.py virtual_lab/test_ai_context_validation.py \
-            tests/test_nested_manifest_bundle.py \
-            --junitxml=test-results.xml -q
+          python -m pytest --junitxml=test-results.xml -q
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: junit-python-${{ matrix.python-version }}
           path: test-results.xml
 
+  manual:
+    name: Manual workflow without AI packages
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[cockpit,dev]'
+      - name: Verify AI packages are absent
+        run: |
+          python -c "import importlib.util; assert importlib.util.find_spec('google') is None or (importlib.util.find_spec('google.adk') is None and importlib.util.find_spec('google.genai') is None)"
+      - name: Run manual research and integrity checks
+        run: python -m pytest tests/gui/test_manual_research_flow.py tests/projects tests/biology tests/calibration tests/validation tests/core -q
+
   build:
     name: Build wheel and manifest
-    needs: core
+    needs: [core, manual]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

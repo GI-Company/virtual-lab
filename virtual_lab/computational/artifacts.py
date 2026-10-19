@@ -12,7 +12,8 @@ from virtual_lab.domain.observation import NormalizedObservation, ObservationKin
 
 
 def data_root() -> Path:
-    return Path(os.environ.get("VIRTUALLAB_DATA_DIR", Path.home() / "Library/Application Support/VirtualLab/cockpit"))
+    from virtual_lab.core.paths import app_data_dir
+    return app_data_dir()
 
 
 def write_json(path: Path, value):

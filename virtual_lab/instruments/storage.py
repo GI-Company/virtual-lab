@@ -15,8 +15,9 @@ class MeasurementStore(Protocol):
     def abort(self, reason: str): ...
 
 class JsonlMeasurementStore:
-    def __init__(self, base_dir: str = "data/instruments"):
-        self.base_dir = base_dir
+    def __init__(self, base_dir: Optional[str] = None):
+        from virtual_lab.core.paths import app_data_dir
+        self.base_dir = str(base_dir) if base_dir is not None else str(app_data_dir() / "instruments")
         self.session_id: Optional[str] = None
         self.instrument_id: Optional[str] = None
         self.session_dir: Optional[str] = None
@@ -29,21 +30,27 @@ class JsonlMeasurementStore:
         self.last_timestamp = None
 
     def begin(self, session_id: str, instrument_id: str, metadata: dict):
+        import re
+        if self.file_handle is not None:
+            raise RuntimeError('Finish or abort the current session before starting another.')
+        if not isinstance(session_id, str) or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,199}', session_id) is None or session_id in ('.', '..'):
+            raise ValueError('Use a safe, unique session identifier.')
+        self.acquisition_utc = datetime.now(timezone.utc).isoformat()
         self.session_id = session_id
         self.instrument_id = instrument_id
         self.session_dir = os.path.join(self.base_dir, session_id)
-        os.makedirs(self.session_dir, exist_ok=True)
+        os.makedirs(self.session_dir, exist_ok=False)
         
         with open(os.path.join(self.session_dir, "session.json"), "w") as f:
             json.dump({
                 "session_id": session_id,
                 "instrument_id": instrument_id,
-                "start_utc": datetime.now(timezone.utc).isoformat(),
+                "start_utc": self.acquisition_utc,
                 "metadata": metadata
             }, f, indent=2)
             
         self.jsonl_path = os.path.join(self.session_dir, "measurements.jsonl")
-        self.file_handle = open(self.jsonl_path, "a")
+        self.file_handle = open(self.jsonl_path, "x")
         self.sample_count_total = 0
         self.sample_counts.clear()
         self.first_timestamp = None
@@ -84,7 +91,7 @@ class JsonlMeasurementStore:
             f.write(artifact_hash)
             
         duration_s = 0.0
-        if self.first_timestamp and self.last_timestamp and self.sample_count_total > 1:
+        if self.first_timestamp is not None and self.last_timestamp is not None and self.sample_count_total > 1:
             duration_s = (self.last_timestamp - self.first_timestamp) / 1e9
                 
         return {
@@ -95,6 +102,9 @@ class JsonlMeasurementStore:
             "duration_s": duration_s,
             "artifact_format": "jsonl/v1",
             "artifact_hash": artifact_hash,
+            "artifact_sha256": artifact_hash,
+            "artifact_path": os.path.abspath(self.jsonl_path),
+            "acquisition_utc": self.acquisition_utc,
             "dropped_packet_counts": dropped_counts or {},
             "rejected_packet_counts": rejected_count
         }
@@ -117,7 +127,7 @@ class JsonlMeasurementStore:
             f.write(artifact_hash)
             
         duration_s = 0.0
-        if self.first_timestamp and self.last_timestamp and self.sample_count_total > 1:
+        if self.first_timestamp is not None and self.last_timestamp is not None and self.sample_count_total > 1:
             duration_s = (self.last_timestamp - self.first_timestamp) / 1e9
             
         if self.session_dir:
@@ -134,5 +144,8 @@ class JsonlMeasurementStore:
             "duration_s": duration_s,
             "artifact_format": "jsonl/v1",
             "artifact_hash": artifact_hash,
+            "artifact_sha256": artifact_hash,
+            "artifact_path": os.path.abspath(self.jsonl_path),
+            "acquisition_utc": self.acquisition_utc,
             "last_sample_device_timestamp_ns": self.last_timestamp
         }

@@ -215,12 +215,13 @@ def provenance_verify(target_path: Optional[str] = None) -> Dict[str, Any]:
     """Verify the cryptographic hash chain of the Genesis Ledger or a .vlab research bundle.
 
     Args:
-        target_path: Path to genesis.db or .vlab bundle file. Defaults to .virtuallab/genesis.db.
+        target_path: Path to genesis.db or .vlab bundle file. Defaults to the application data directory genesis.db.
 
     Returns:
         Verification verdict (VERIFIED, FAILED, or UNAVAILABLE).
     """
-    path = target_path or ".virtuallab/genesis.db"
+    from virtual_lab.core.paths import app_data_dir
+    path = target_path or str(app_data_dir() / "genesis.db")
     if not os.path.exists(path):
         return {
             "schema_version": "vlab.tool.v1",

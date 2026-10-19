@@ -41,6 +41,8 @@ test_results.txt
 .gradle/
 .kotlin/
 tests/protocol/kotlin_interop/bin/
+test-results*.xml
+*.vlprogram/
 
 # VirtualLab specific
 data/

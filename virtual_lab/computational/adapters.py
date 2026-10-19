@@ -92,7 +92,7 @@ class AlphaGenomeAdapter:
         owns_client = client is None
         try:
             if client is None:
-                from virtual_lab.ai.credentials import CredentialService
+                from virtual_lab.core.credentials import CredentialService
                 key = CredentialService().get_api_key("alphagenome")
                 if not key:
                     raise InstrumentError("Save an AlphaGenome API key in the Computational Biology tab first.")

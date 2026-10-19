@@ -1,103 +1,77 @@
-import numpy as np
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QTableWidget, QTableWidgetItem
 from virtual_lab.domain.experiment_store import ExperimentStore
-from virtual_lab.domain.compatibility import find_compatible_pairs
+from virtual_lab.gui.services.study_service import StudyService
+from virtual_lab.gui.services.research_outputs import compare_simulations
+
 
 class CompareWorkspace(QWidget):
     def __init__(self, workspace, parent=None):
         super().__init__(parent)
         self.workspace = workspace
-        self.experiments = []
-        
+        self.runs = {}
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Compare experiments • requires semantic and dimensional compatibility"))
-        
+        layout.addWidget(QLabel('Compare saved simulations • final ensemble medians and 5th–95th percentiles'))
         selectors = QHBoxLayout()
-        self.left = QComboBox()
-        self.right = QComboBox()
-        selectors.addWidget(self.left)
-        selectors.addWidget(self.right)
+        self.left, self.right = QComboBox(), QComboBox()
+        self.left.setAccessibleName('Simulation A')
+        self.right.setAccessibleName('Simulation B')
+        for label, selector in [('A', self.left), ('B', self.right)]:
+            selectors.addWidget(QLabel(label)); selectors.addWidget(selector)
         layout.addLayout(selectors)
-        
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Quantity", "Dim / Unit", "Exp A", "Exp B", "B − A"])
+        self.table.setHorizontalHeaderLabels(['Quantity', 'Unit', 'A median [p05, p95]', 'B median [p05, p95]', 'B − A median'])
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
-        
-        self.note = QLabel("No experiments to compare.")
+        self.note = QLabel()
+        self.note.setTextFormat(Qt.PlainText)
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
-        
         self.left.currentIndexChanged.connect(self.render)
         self.right.currentIndexChanged.connect(self.render)
-        
-        # In a real app we'd connect to workspace state signals to refresh
-        self.workspace.activeExperimentChanged.connect(self.refresh)
+        workspace.activeExperimentChanged.connect(self.refresh)
+        workspace.observationCommitted.connect(self.refresh)
         self.refresh()
 
     def refresh(self, *_):
+        selected = (self.left.currentData(), self.right.currentData())
+        self.runs = {}
         db = ExperimentStore()
-        self.experiments = db.list_experiments()
-        db.close()
-        
-        self.left.blockSignals(True)
-        self.right.blockSignals(True)
-        self.left.clear()
-        self.right.clear()
-        
-        for exp in self.experiments:
-            label = exp.get("label") or "Unnamed"
-            text = f"{exp['id'][:8]} • {exp['compound_id']} • {label}"
-            self.left.addItem(text, userData=exp['id'])
-            self.right.addItem(text, userData=exp['id'])
-            
-        if self.experiments:
-            self.right.setCurrentIndex(len(self.experiments)-1)
-            
-        self.left.blockSignals(False)
-        self.right.blockSignals(False)
+        try:
+            for exp in db.list_experiments():
+                for obs in db.get_observations_for_experiment(exp['id']):
+                    if obs.instrument_id == 'simulation':
+                        self.runs[obs.observation_id] = (obs, f"{exp['label'] or exp['id'][:8]} · {obs.session_id[:8]}")
+        finally:
+            db.close()
+        for selector, previous in zip((self.left, self.right), selected):
+            selector.blockSignals(True); selector.clear()
+            for key, (_, label) in self.runs.items(): selector.addItem(label, key)
+            index = selector.findData(previous)
+            if index >= 0: selector.setCurrentIndex(index)
+            selector.blockSignals(False)
+        if selected[1] is None and self.right.count() > 1:
+            self.right.setCurrentIndex(self.right.count()-1)
         self.render()
 
     def render(self, *_):
-        if not self.experiments:
+        self.table.setRowCount(0)
+        a, b = self.left.currentData(), self.right.currentData()
+        if a not in self.runs or b not in self.runs:
+            self.note.setText('Save and attach simulations to experiments, then select two runs.')
             return
-            
-        idx_a = self.left.currentIndex()
-        idx_b = self.right.currentIndex()
-        if idx_a < 0 or idx_b < 0: return
-        
-        exp_a_id = self.left.itemData(idx_a)
-        exp_b_id = self.right.itemData(idx_b)
-        
-        db = ExperimentStore()
-        obs_a = db.get_observations_for_experiment(exp_a_id)
-        obs_b = db.get_observations_for_experiment(exp_b_id)
-        db.close()
-        
-        compatible, incompatible = find_compatible_pairs(obs_a, obs_b)
-        
-        self.table.setRowCount(len(compatible))
-        for i, pair in enumerate(compatible):
-            # We don't have scalar values easily accessible in the generic model without loading the artifact.
-            # For this prototype we will just show the compatibility link.
-            # In a full implementation we would parse the artifacts or stats.
-            
-            # Since simulation output creates observations with 0 samples, we just display the quantity name.
-            name = pair.quantity_a.semantic_name
-            dim_unit = f"{pair.quantity_a.physical_dimension.value} ({pair.quantity_a.units})"
-            
-            # Display epistemic state to show lineage
-            val_a = f"[{pair.quantity_a.epistemic_state.value}]"
-            val_b = f"[{pair.quantity_b.epistemic_state.value}]"
-            
-            self.table.setItem(i, 0, QTableWidgetItem(name))
-            self.table.setItem(i, 1, QTableWidgetItem(dim_unit))
-            self.table.setItem(i, 2, QTableWidgetItem(val_a))
-            self.table.setItem(i, 3, QTableWidgetItem(val_b))
-            self.table.setItem(i, 4, QTableWidgetItem("N/A (See Artifacts)"))
-
-        if incompatible:
-            incomp_names = [inc.quantity_a.semantic_name for inc in incompatible]
-            self.note.setText(f"Incompatible quantities in Exp A not comparable to Exp B: {', '.join(incomp_names)}")
-        else:
-            self.note.setText("All quantities from Exp A were semantically matched to Exp B.")
+        try:
+            payload_a = StudyService.inspect(self.runs[a][0])
+            payload_b = StudyService.inspect(self.runs[b][0])
+            rows = compare_simulations(payload_a, payload_b)
+            self.table.setRowCount(len(rows))
+            for i, row in enumerate(rows):
+                qa, qb = row['a'], row['b']
+                values = [row['state'], row['units'], f'{qa[1]:.6g} [{qa[0]:.6g}, {qa[2]:.6g}]',
+                          f'{qb[1]:.6g} [{qb[0]:.6g}, {qb[2]:.6g}]', f"{row['delta']:.6g}"]
+                for j, value in enumerate(values): self.table.setItem(i, j, QTableWidgetItem(value))
+            self.note.setText('SIMULATED inputs; differences are CALCULATED. Percentiles describe ensemble spread, not confidence intervals or biological validation. '
+                f"A: {payload_a['config']['compound']}; B: {payload_b['config']['compound']}. Inspect each saved protocol for other input differences.")
+        except Exception as exc:
+            self.table.setRowCount(0)
+            self.note.setText(f'Could not compare verified runs: {exc}')

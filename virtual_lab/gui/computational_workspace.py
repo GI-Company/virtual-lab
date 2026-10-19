@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSplitter,
 )
 
-from virtual_lab.ai.credentials import CredentialService
+from virtual_lab.core.credentials import CredentialService
 from virtual_lab.computational.artifacts import CompletedRun, register
 from virtual_lab.computational.requests import GenomeRequest, StructureRequest, BitVisionAuditRequest, LENGTHS, OUTPUTS
 from virtual_lab.domain.experiment_store import ExperimentStore
@@ -99,7 +99,7 @@ class ComputationalWorkspace(QWidget):
         panel = QWidget()
         form = QFormLayout(panel)
         self.genome_form = form
-        self.key_status = QLabel("Key saved in Keychain" if CredentialService().get_api_key("alphagenome") else "AlphaGenome key required")
+        self.key_status = QLabel("AlphaGenome credentials are optional; required only for remote genome assays")
         form.addRow(self.key_status)
         key_row = QWidget()
         key_layout = QHBoxLayout(key_row)

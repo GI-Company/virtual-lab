@@ -69,7 +69,11 @@ def package_vlprogram(source_dir, output_dir):
     print(f"Signature: {signature_hex}")
 
 if __name__ == "__main__":
-    src = "/Users/hanna/research/VirtualLab/virtual_lab/diseases/rho_p23h"
-    out = "/Users/hanna/research/VirtualLab/virtual_lab/diseases/rho_p23h.vlprogram"
-    package_vlprogram(src, out)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build a signed disease program from its Python source.")
+    parser.add_argument("source_dir", help="Source disease package directory")
+    parser.add_argument("output_dir", help="Output directory ending in .vlprogram")
+    args = parser.parse_args()
+    package_vlprogram(args.source_dir, args.output_dir)
 

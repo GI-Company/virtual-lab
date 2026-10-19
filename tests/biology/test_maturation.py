@@ -8,7 +8,7 @@ from virtual_lab.biology.objects import BiologicalSystem, starter_system
 from virtual_lab.biology.simulation import BiologicalRun, simulate
 from virtual_lab.biology.calibration_bridge import system_from_calibration
 from virtual_lab.calibration.decay import load_benchmark, fit_decay
-from test_objects import event, service
+from tests.biology.test_objects import event, service
 
 
 def test_maturation_transfers_pool_without_creating_total_protein():

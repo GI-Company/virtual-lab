@@ -47,12 +47,8 @@ from virtual_lab.domain.observation import (
 
 
 def _default_db_path() -> str:
-    data_dir = Path(
-        os.environ.get(
-            "VIRTUALLAB_DATA_DIR",
-            Path.home() / "Library/Application Support/VirtualLab/cockpit",
-        )
-    )
+    from virtual_lab.core.paths import app_data_dir
+    data_dir = app_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
     return str(data_dir / "experiments.db")
 

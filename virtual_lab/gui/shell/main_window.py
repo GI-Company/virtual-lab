@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QHBoxLayout, QLabel, QFrame
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QHBoxLayout, QLabel, QFrame, QPushButton
 from PySide6.QtCore import Qt
 
 from virtual_lab.gui.shell.workspace_manager import WorkspaceState
@@ -7,7 +7,6 @@ from virtual_lab.gui.shell.system_monitor import SystemMonitorWidget
 from virtual_lab.gui.world.world_view import WorldWorkspace
 from virtual_lab.gui.experiments.experiment_workspace import ExperimentWorkspace
 from virtual_lab.gui.analysis.analysis_workspace import AnalysisWorkspace
-from virtual_lab.gui.ai.local_research_workspace import LocalResearchWorkspace
 from virtual_lab.gui.evidence.evidence_workspace import EvidenceWorkspace
 from virtual_lab.gui.provenance.provenance_workspace import ProvenanceWorkspace
 from virtual_lab.gui.inspectors.numerical_workspace import NumericalWorkspace
@@ -21,6 +20,8 @@ from virtual_lab.version import __version__
 class VirtualLabApplication(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Destroy child WebEngine pages before QApplication releases its profile.
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle(f"VirtualLab v{__version__} - Scientific Cockpit")
         self.resize(1600, 1000)
         self.setMinimumSize(1200, 800)
@@ -32,21 +33,10 @@ class VirtualLabApplication(QMainWindow):
         self.mapping_service = StructureMappingService()
         
         # Initialize Unified Runtime
-        self.runtime = create_virtual_lab_runtime(".virtuallab/genesis.db")
+        self.runtime = create_virtual_lab_runtime()
         self.ledger = self.runtime.ledger
         self.evidence_store = self.runtime.evidence_store
         
-        print("\n--- VIRTUAL LAB RUNTIME ---")
-        print(f"runtime_id: {id(self.runtime)}")
-        print(f"agent_controller_id: {id(self.runtime.agent_controller)}")
-        print(f"gemma_backend_id: {id(self.runtime.gemma_backend)}")
-        print(f"memory_store_id: N/A")
-        print(f"genesis_ledger_id: {id(self.runtime.ledger)}")
-        print(f"tool_registry_id: {id(self.runtime.tool_registry)}")
-        print(f"context_assembler_id: {id(self.runtime.context_assembler)}")
-        print("---------------------------\n")
-        
-
         # Central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -106,7 +96,16 @@ class VirtualLabApplication(QMainWindow):
         self.world = WorldWorkspace(self.workspace, self.evidence_store, self.mapping_service)
         self.experiment = ExperimentWorkspace(self.workspace)
         self.analysis = AnalysisWorkspace(self.workspace)
-        self.local_research = LocalResearchWorkspace(self.workspace, agent_runtime=self.runtime.agent_runtime, prediction_ledger=self.ledger)
+        self.local_research = None
+        self.ai_panel = QWidget()
+        self.ai_layout = QVBoxLayout(self.ai_panel)
+        self.ai_status = QLabel("AI assistance is off. You can plan, run, analyze, conclude, and export studies without AI.")
+        self.ai_status.setWordWrap(True)
+        self.ai_enable_button = QPushButton("Enable optional AI assistance")
+        self.ai_enable_button.clicked.connect(self._enable_ai)
+        self.ai_layout.addWidget(self.ai_status)
+        self.ai_layout.addWidget(self.ai_enable_button)
+        self.ai_layout.addStretch()
         from virtual_lab.gui.instruments.workspace import InstrumentsWorkspace
         self.instruments = InstrumentsWorkspace(self.workspace, gateway=self.runtime.gateway, ledger=self.ledger)
         from virtual_lab.gui.computational_workspace import ComputationalWorkspace
@@ -136,7 +135,7 @@ class VirtualLabApplication(QMainWindow):
         self.workspace.validationResultChanged.connect(lambda value: self.calibration_tabs.setCurrentWidget(self.maturation_validation) if value else None)
         self.workspace.calibrationResultChanged.connect(lambda value: self.calibration_tabs.setCurrentWidget(self.calibration) if value else None)
         self.tabs.addTab(self.calibration_tabs, "Calibration")
-        self.tabs.addTab(self.local_research, "Local Research Mode")
+        self.tabs.addTab(self.ai_panel, "AI assistance (optional)")
         self.tabs.addTab(self.instruments, "Instruments")
         self.tabs.addTab(self.computational, "Computational Biology")
         self.tabs.addTab(self.evidence, "Evidence")
@@ -144,17 +143,42 @@ class VirtualLabApplication(QMainWindow):
         self.tabs.addTab(self.numerical, "Numerical")
         self.tabs.addTab(self.compare, "Compare")
         
-        # Setup LocalResearchWorkspace backend wiring
-        self.local_research.controller = self.runtime.agent_controller
-        
-        # LocalResearchWorkspace reports whether Vertex credentials are configured.
-
-            
+        self.tabs.currentChanged.connect(self._tab_changed)
+        self.projects.navigateRequested.connect(self._navigate)
         self.workspace.evidenceSelectionChanged.connect(lambda _: self.tabs.setCurrentWidget(self.evidence))
         self.workspace.resultChanged.connect(self._refresh_status)
         self._refresh_status()
         self.workspace.activeExperimentChanged.connect(self._refresh_context)
         self._refresh_context()
+
+    def _enable_ai(self):
+        if self.local_research is not None:
+            return
+        try:
+            from virtual_lab.gui.ai.local_research_workspace import LocalResearchWorkspace
+            runtime = self.runtime.enable_ai()
+            panel = LocalResearchWorkspace(self.workspace, agent_runtime=runtime, prediction_ledger=self.ledger)
+            panel.controller = self.runtime.agent_controller
+        except ImportError:
+            self.ai_status.setText("Optional AI assistance is not installed. All manual research tools remain available. Install the ai extra to enable assistance.")
+            return
+        except Exception as exc:
+            self.ai_status.setText(f"AI assistance could not start: {exc}. Manual research remains available.")
+            return
+        self.local_research = panel
+        self.ai_enable_button.hide()
+        self.ai_status.hide()
+        self.ai_layout.insertWidget(0, panel)
+
+    def _tab_changed(self, *_):
+        if self.tabs.currentWidget() is self.instruments and not self.runtime.gateway.server.isListening():
+            if not self.runtime.gateway.start():
+                self.instruments.lbl_status.setText("Instrument listener could not start; port 8765 may be in use.")
+
+    def _navigate(self, name):
+        target = {"Simulation": self.experiment, "Analysis": self.analysis, "Compare": self.compare}.get(name)
+        if target is not None:
+            self.tabs.setCurrentWidget(target)
 
     def _refresh_context(self, *_):
         exp = self.workspace.active_experiment
@@ -183,6 +207,18 @@ class VirtualLabApplication(QMainWindow):
             self.experiment.status.setText("Cancelling active run; close again when cancellation completes.")
             event.ignore()
         else:
+            if self.instruments.session_state == 'RECORDING':
+                try:
+                    self.instruments._stop_session()
+                except Exception as exc:
+                    self.instruments.lbl_session_status.setText(f"Could not save recording: {exc}. Stop the session before closing.")
+                    event.ignore()
+                    return
+            if self.local_research is not None and not self.local_research.shutdown_agent_runtime():
+                event.ignore()
+                return
+            self.projects.service.store.close()
+            self.runtime.shutdown()
             event.accept()
 
 

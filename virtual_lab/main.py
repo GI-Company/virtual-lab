@@ -1,21 +1,11 @@
-import sys
-from pathlib import Path
+"""Desktop entry point shared with the supported cockpit launcher."""
 
-# Add project root to sys.path if needed
-ROOT = Path(__file__).resolve().parent
-REPO = ROOT.parents[3]
-sys.path.insert(0, str(REPO))
+from virtual_lab.gui.shell.main_window import run
 
-from PySide6.QtWidgets import QApplication
-from virtual_lab.core.state import WorkspaceState
-from virtual_lab.gui.main_window import MainWindow
 
 def main():
-    app = QApplication(sys.argv)
-    workspace = WorkspaceState()
-    window = MainWindow(workspace)
-    window.show()
-    sys.exit(app.exec())
+    run()
+
 
 if __name__ == "__main__":
     main()
