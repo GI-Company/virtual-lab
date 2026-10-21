@@ -123,8 +123,8 @@ class InstrumentGateway(QObject):
         conn = self.registry.get_connection(conn_id)
         if not conn: return
         
+        c_type = path.strip("/").upper()
         if conn.bound_device_id is None:
-            c_type = path.strip("/").upper()
             logger.info("[%s][%s] late binding to %s", c_type, conn_id, device_id)
             try:
                 self.registry.bind_connection(conn_id, device_id)
@@ -136,6 +136,10 @@ class InstrumentGateway(QObject):
             except ValueError as e:
                 logger.error("[%s][%s] immutable binding error: %s", c_type, conn_id, e)
                 conn.socket.close()
+        elif conn.bound_device_id != device_id:
+            logger.error("[%s][%s] immutable binding mismatch: expected %s, got %s", c_type, conn_id, conn.bound_device_id, device_id)
+            conn.socket.close()
+            raise ValueError(f"Immutable binding mismatch: expected {conn.bound_device_id}, got {device_id}")
 
     def _peek_message_type(self, raw: str) -> str:
         try:
@@ -281,17 +285,25 @@ class InstrumentGateway(QObject):
             return
             
         if result["type"] == "CAPABILITIES":
-            dev_id = result["capabilities"].camera_stream_key.device_id
-            self._handle_late_binding("/control", conn_id, dev_id)
+            dev_id = getattr(result["capabilities"], "device_id", None) or getattr(result["capabilities"].camera_stream_key, "device_id", None)
+            if dev_id:
+                self._handle_late_binding("/control", conn_id, dev_id)
             self.controlCapabilityReceived.emit(result["capabilities"])
         elif result["type"] == "CONTROL_RESULT":
             self.controlMessageReceived.emit(result["result"])
+        elif result["type"] == "CAMERA_STATE":
+            self.controlMessageReceived.emit(result["state"])
+        elif result["type"] == "SCIENTIFIC_CAPTURE_RESULT":
+            self.controlMessageReceived.emit(result["result"])
+        elif result["type"] == "INSTRUMENT_DESCRIPTOR":
+            self.controlMessageReceived.emit(result["descriptor"])
         elif result["type"] == "ARTIFACT_REGISTER":
-            # Handle directly in the gateway instead of emitting
+            # Handle directly in the gateway and emit signal
             registration = result["registration"]
-            dev_id = conn.bound_device_id if conn else registration.device_id
+            dev_id = (conn.bound_device_id if conn and conn.bound_device_id else None) or registration.device_id
             response_json = self.registration_service.handle_registration(registration, dev_id)
             socket.sendTextMessage(response_json)
+            self.artifactRegistrationReceived.emit(registration)
 
     def _on_disconnect(self, socket, path, conn_id):
         import shiboken6

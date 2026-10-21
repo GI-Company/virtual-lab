@@ -70,6 +70,9 @@ class MoleculeView(QWidget):
         self.save = QPushButton('Add to Experiment')
         self.save.setEnabled(False)
         layout.addWidget(self.save)
+        self.status = QLabel('')
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
         
         self.selector.currentTextChanged.connect(self.choose)
         self.choose(self.selector.currentText())
@@ -103,6 +106,7 @@ class MoleculeView(QWidget):
             d = self.design
             self.save.setEnabled(True)
             self.details_group.setVisible(True)
+            self.status.setText('')
             
             self.lbl_formula.setText(d['formula'])
             self.lbl_mw.setText(f"{d['molecular_weight']:.2f}")
@@ -112,11 +116,13 @@ class MoleculeView(QWidget):
                 self.view.page().runJavaScript('loadMolecule(' + json.dumps(d['sdf']) + ');')
         except Exception as exc:
             self.invalidate()
+            self.status.setText(f"Cannot build molecule: {exc}")
 
     def persist(self):
         if self.design:
             try:
                 RunStore().save_design(self.design)
                 self.save.setText('Added to Experiment!')
+                self.status.setText('')
             except Exception as exc:
-                pass
+                self.status.setText(f"Cannot save molecule: {exc}")

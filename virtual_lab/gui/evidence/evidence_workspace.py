@@ -1,11 +1,18 @@
 from html import escape
-from PySide6.QtWidgets import QWidget,QVBoxLayout,QListWidget,QTextBrowser,QPushButton,QLabel
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QListWidget,QTextBrowser,QPushButton,QLabel
 from virtual_lab.gui.services.evidence_store import EvidenceStore
 class EvidenceWorkspace(QWidget):
+    navigateRequested = Signal(str)
     def __init__(self,workspace,parent=None):
         super().__init__(parent);self.store=EvidenceStore();self.records=[]
         layout=QVBoxLayout(self);layout.addWidget(QLabel("Curated source-linked claims • counts are claims, not independent experiments"))
-        show=QPushButton("Show all evidence");show.clicked.connect(lambda:self.filter(None));layout.addWidget(show)
+        top_row=QHBoxLayout()
+        show=QPushButton("Show all evidence");show.clicked.connect(lambda:self.filter(None));top_row.addWidget(show)
+        self.btn_conclusion=QPushButton("Record Conclusion");self.btn_conclusion.setObjectName("primary")
+        self.btn_conclusion.clicked.connect(lambda:self.navigateRequested.emit("Conclusion"))
+        top_row.addWidget(self.btn_conclusion)
+        layout.addLayout(top_row)
         self.record_list=QListWidget();layout.addWidget(self.record_list)
         self.inspector=QTextBrowser();self.inspector.setOpenExternalLinks(True);layout.addWidget(self.inspector)
         self.record_list.currentRowChanged.connect(self.select)

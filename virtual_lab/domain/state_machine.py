@@ -137,10 +137,16 @@ class ScientificDAG:
         run = self.runs[obs.run_id]
         
         # Enforce chronology: Observation must post-date Prediction
-        if obs.created_at < pred.created_at:
+        def _parse_ts(ts: str):
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return ts
+
+        if _parse_ts(obs.created_at) < _parse_ts(pred.created_at):
              raise ValueError("Chronology violation: Observation cannot pre-date Prediction")
              
-        # Enforce lineage: Observation's run must map to the Prediction's protocol
         # Enforce lineage: Observation's run must map to the Prediction's protocol
         if pred.protocol_id and run.protocol_id != pred.protocol_id:
              raise ValueError("Lineage violation: Observation protocol does not match Prediction protocol")

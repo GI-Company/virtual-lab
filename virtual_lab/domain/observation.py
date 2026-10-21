@@ -79,6 +79,21 @@ _UNIT_SCALES: dict[PhysicalDimension, dict[str, float]] = {
     PhysicalDimension.POLAR_SURFACE_AREA: {
         "A^2": 1.0, "Å^2": 1.0,
     },
+    PhysicalDimension.LIPOPHILICITY: {
+        "": 1.0, "logP": 1.0,
+    },
+    PhysicalDimension.TEMPERATURE: {
+        "K": 1.0, "degC": 1.0, "°C": 1.0,
+    },
+    PhysicalDimension.VOLTAGE: {
+        "V": 1.0, "mV": 1e-3, "uV": 1e-6,
+    },
+    PhysicalDimension.CURRENT: {
+        "A": 1.0, "mA": 1e-3, "uA": 1e-6, "nA": 1e-9,
+    },
+    PhysicalDimension.COUNT: {
+        "": 1.0, "count": 1.0, "molecules": 1.0, "cells": 1.0,
+    },
     PhysicalDimension.DIMENSIONLESS_FRACTION: {
         "fraction": 1.0, "": 1.0,
     },
@@ -353,8 +368,8 @@ class RawObservation(ExperimentObservation):
 @dataclass(frozen=True)
 class NormalizedObservation(ExperimentObservation):
     """
-    Observation derived via calibration, cleanup, or unit normalization.
-    Must maintain EpistemicState.CALCULATED, DERIVED, or INFERRED.
+    Observation derived via calibration, simulation, prediction, or normalization.
+    Must maintain a non-MEASURED EpistemicState (e.g. CALCULATED, DERIVED, INFERRED, SIMULATED, PREDICTED, CALIBRATED, or MODEL_ASSUMPTION).
     """
     epistemic_state: EpistemicState = EpistemicState.CALCULATED
     parent_observation_id: Optional[str] = None

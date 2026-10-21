@@ -88,12 +88,19 @@ def main(root):
     observations = panel.service.store.get_observations_for_experiment(exp_id)
     simulations = [o for o in observations if o.instrument_id == 'simulation']
     assert len(simulations) == 2
-    window.tabs.setCurrentWidget(window.compare)
+    assert simulation.btn_open_compare.isEnabled()
+    simulation.btn_open_compare.click()
+    assert window.tabs.currentWidget() is window.compare
     window.compare.refresh()
     window.compare.left.setCurrentIndex(0); window.compare.right.setCurrentIndex(1)
     assert window.compare.table.rowCount() == 2, window.compare.note.text()
     assert float(window.compare.table.item(1, 4).text()) > 0
-    window.tabs.setCurrentWidget(window.projects)
+    window.compare.btn_numerical.click()
+    assert window.tabs.currentWidget() is window.numerical
+    assert window.numerical.lbl_status.text() == 'PASSED'
+    window.numerical.btn_conclusion.click()
+    assert window.tabs.currentWidget() is window.projects
+    assert panel.notebook.currentIndex() == 2
     for i in range(panel.results.count()):
         if panel.results.item(i).data(Qt.UserRole).observation_id == simulations[-1].observation_id:
             panel.results.setCurrentRow(i)
@@ -107,7 +114,12 @@ def main(root):
     panel.interpretation.setPlainText('The exposure scenario has a higher final protein median in this model.')
     panel.limitations.setPlainText('Generic assumed kinetics and fixed parameters; no measured-data or biological validation.')
     panel.decision.setCurrentIndex(panel.decision.findData('supports_within_scope'))
-    for i in range(panel.evidence_choices.count()): panel.evidence_choices.item(i).setCheckState(Qt.Checked)
+    for i in range(panel.evidence_choices.count()):
+        item = panel.evidence_choices.item(i)
+        checkbox = panel.evidence_choices.itemWidget(item)
+        assert checkbox.accessibleName().startswith('simulation · SIMULATED')
+        checkbox.click()
+        assert item.checkState() == Qt.Checked
     panel.save_conclusion_button.click()
     records = panel.service.research_records()
     assert len(records) == 2, panel.status.text()
@@ -134,6 +146,8 @@ def main(root):
     imported = VirtualLabApplication()
     imported.projects.package_path.setText(str(bundle)); imported.projects._import()
     assert imported.workspace.active_experiment.id == exp_id, imported.projects.status.text()
+    assert 'Imported study verified (4 records: 1 plan, 2 simulation, 1 conclusion · 0 local runs)' in imported.ledger_status.text()
+    assert 'Imported study package verified' in imported.provenance.status.text()
     assert len(imported.projects.service.research_records()) == 2
     for obs in imported.projects.service.store.get_observations_for_experiment(exp_id):
         imported.projects.service.inspect(obs)

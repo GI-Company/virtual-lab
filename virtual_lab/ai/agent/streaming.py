@@ -54,25 +54,30 @@ class StreamingEnvelopeParser:
             return
             
         # If we are inside the 'text' field of an answer, we can emit deltas
-        # A simple heuristic: if we see "text": " and we are inside that string
-        if self.json_started and self.in_string:
+        if self.json_started:
             text_match = re.search(r'"text"\s*:\s*"', self.buffer)
             if text_match:
                 start_idx = text_match.end()
                 if len(self.buffer) > start_idx:
-                    # Everything from start_idx to the end of the buffer (minus trailing quote if any) is the text
-                    # We have to handle escaped characters for real JSON. 
-                    # For a quick streaming delta, we can just parse the substring using json.loads manually if it ends with quote,
-                    # or just yield the raw suffix and let UI handle it.
-                    # A better way: try parsing the partial JSON to see if we can extract "text".
-                    # For simplicity, we just strip the start_idx and unescape manually.
-                    raw_text = self.buffer[start_idx:]
-                    if not self.in_string and raw_text.endswith('"'):
-                        raw_text = raw_text[:-1]
-                        
-                    # Unescape basic sequences
-                    raw_text = raw_text.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
-                    
+                    # Extract characters only up to the unescaped closing quote of "text"
+                    chars = []
+                    esc = False
+                    for ch in self.buffer[start_idx:]:
+                        if esc:
+                            if ch == 'n':
+                                chars.append('\n')
+                            elif ch == 't':
+                                chars.append('\t')
+                            else:
+                                chars.append(ch)
+                            esc = False
+                        elif ch == '\\':
+                            esc = True
+                        elif ch == '"':
+                            break
+                        else:
+                            chars.append(ch)
+                    raw_text = "".join(chars)
                     if len(raw_text) > self.last_emitted_answer_len:
                         delta = raw_text[self.last_emitted_answer_len:]
                         self.last_emitted_answer_len = len(raw_text)

@@ -13,7 +13,7 @@ Uses only mlx.core and psutil — no subprocesses, no blocking calls.
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QGridLayout, QLabel
 
 
 def _fmt_bytes(n: int, decimals: int = 1) -> str:
@@ -43,7 +43,7 @@ class SystemMonitorWidget(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _setup_ui(self):
-        layout = QHBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(8, 2, 8, 2)
         layout.setSpacing(14)
 
@@ -60,24 +60,24 @@ class SystemMonitorWidget(QWidget):
         lbl_gpu.setStyleSheet(style_label)
         self._val_gpu = QLabel("—")
         self._val_gpu.setStyleSheet(style_value)
-        layout.addWidget(lbl_gpu)
-        layout.addWidget(self._val_gpu)
+        layout.addWidget(lbl_gpu, 0, 0)
+        layout.addWidget(self._val_gpu, 1, 0)
 
         # RAM
         lbl_ram = QLabel("RAM")
         lbl_ram.setStyleSheet(style_label)
         self._val_ram = QLabel("—")
         self._val_ram.setStyleSheet(style_value)
-        layout.addWidget(lbl_ram)
-        layout.addWidget(self._val_ram)
+        layout.addWidget(lbl_ram, 0, 1)
+        layout.addWidget(self._val_ram, 1, 1)
 
         # Disk
         lbl_disk = QLabel("DISK")
         lbl_disk.setStyleSheet(style_label)
         self._val_disk = QLabel("—")
         self._val_disk.setStyleSheet(style_value)
-        layout.addWidget(lbl_disk)
-        layout.addWidget(self._val_disk)
+        layout.addWidget(lbl_disk, 0, 2)
+        layout.addWidget(self._val_disk, 1, 2)
 
     # ── Polling ───────────────────────────────────────────────────────────────
 

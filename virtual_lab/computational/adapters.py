@@ -155,7 +155,9 @@ class AlphaGenomeAdapter:
         finally:
             if owns_client and client is not None:
                 # SDK 0.9 exposes the channel only through this private attribute.
-                client._channel.close()
+                channel = getattr(client, "_channel", None)
+                if channel is not None and hasattr(channel, "close"):
+                    channel.close()
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -214,7 +216,13 @@ class AlphaFoldDBAdapter:
             if not entries[0].get("paeDocUrl"):
                 raise InstrumentError("No PAE file is available for this entry.")
             pae_raw = self.fetch(entries[0]["paeDocUrl"], 32 * 1024 * 1024)
-            pae = np.asarray(json.loads(pae_raw)[0]["predicted_aligned_error"], dtype=float)
+            try:
+                pae_doc = json.loads(pae_raw)
+                if not isinstance(pae_doc, list) or not pae_doc or not isinstance(pae_doc[0], dict) or "predicted_aligned_error" not in pae_doc[0]:
+                    raise InstrumentError("AlphaFold returned an invalid PAE matrix.")
+                pae = np.asarray(pae_doc[0]["predicted_aligned_error"], dtype=float)
+            except (ValueError, TypeError, KeyError, IndexError):
+                raise InstrumentError("AlphaFold returned an invalid PAE matrix.") from None
             if pae.ndim != 2 or not pae.size or pae.shape[0] != pae.shape[1] or not np.isfinite(pae).all() or (pae < 0).any():
                 raise InstrumentError("AlphaFold returned an invalid PAE matrix.")
             summary["pae"] = {"shape": list(pae.shape), "mean_angstrom": float(pae.mean()), "max_angstrom": float(pae.max())}

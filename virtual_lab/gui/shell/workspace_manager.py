@@ -18,6 +18,7 @@ class WorkspaceState(QObject):
     
     observationCommitted = Signal(object) # ExperimentObservation
     observationStaged = Signal(object)    # ExperimentObservation
+    aiStateChanged = Signal(str)          # 'off' | 'enabled' | 'used'
 
     def __init__(self):
         super().__init__()
@@ -25,6 +26,7 @@ class WorkspaceState(QObject):
         self._active_project_id: Optional[str] = None
         self._active_experiment = None # VirtualExperiment
         self._active_branch_id: Optional[str] = None
+        self._ai_state: str = "off"
 
         self._selected_object: ScientificSelection = ScientificSelection(kind=SelectionKind.NONE)
         self._selected_compound: Optional[str] = None
@@ -74,3 +76,13 @@ class WorkspaceState(QObject):
         if self._active_experiment != value:
             self._active_experiment = value
             self.activeExperimentChanged.emit(value.id if value else "")
+
+    @property
+    def ai_state(self) -> str:
+        return self._ai_state
+
+    @ai_state.setter
+    def ai_state(self, value: str):
+        if self._ai_state != value:
+            self._ai_state = value
+            self.aiStateChanged.emit(value)

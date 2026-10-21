@@ -12,19 +12,34 @@ class ProvenanceWorkspace(QWidget):
         workspace.resultChanged.connect(self.refresh);self.refresh()
         workspace.observationCommitted.connect(self.refresh)
         workspace.observationStaged.connect(self.refresh)
+        workspace.activeExperimentChanged.connect(self.refresh)
     def refresh(self,*_):
         self.event_list.clear()
         try:
             store=RunStore();self.events=store.events();store.load_all()
+            seen_ids={e["event_id"] for e in self.events}
             if self.ledger is not None:
                 from virtual_lab.computational.artifacts import CompletedRun
                 self.ledger.verify_chain()
-                for row in self.ledger.conn.execute("SELECT * FROM ledger_events WHERE event_type = 'COMPUTATIONAL_PREDICTION_RECORDED' ORDER BY sequence"):
+                for row in self.ledger.conn.execute("SELECT * FROM ledger_events ORDER BY sequence"):
                     event=self.ledger._row_to_event(row).model_dump()
-                    p=event["payload"]
-                    CompletedRun(p["artifact_path"],p["artifact_sha256"]).read()
-                    self.events.append(event)
-            self.status.setText("Run chains and saved run artifacts verified" if self.events else "No local run ledger yet")
+                    if event["event_type"] == "COMPUTATIONAL_PREDICTION_RECORDED":
+                        p=event["payload"]
+                        CompletedRun(p["artifact_path"],p["artifact_sha256"]).read()
+                    if event["event_id"] not in seen_ids:
+                        self.events.append(event)
+                        seen_ids.add(event["event_id"])
+            imported_events = [e for e in self.events if e.get("event_type") == "STUDY_IMPORTED"]
+            sim_events = [e for e in self.events if e.get("event_type") in ("SIMULATION_SAVED", "DESIGN_SAVED")]
+            if imported_events and not sim_events:
+                obs_count = sum(len(e.get("payload", {}).get("observations", [])) for e in imported_events)
+                self.status.setText(
+                    f"Imported study package verified ({obs_count} imported record(s) hash-checked; 0 local simulation runs)"
+                )
+            elif self.events:
+                self.status.setText("Run chains and saved run artifacts verified")
+            else:
+                self.status.setText("No local run ledger yet")
             for e in self.events:self.event_list.addItem(f"{e['sequence']} • {e['event_type']} • {e['timestamp_utc']}")
         except Exception as exc:self.events=[];self.status.setText(f"INTEGRITY ERROR: {exc}")
     def select(self,row):

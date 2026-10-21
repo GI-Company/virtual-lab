@@ -66,12 +66,23 @@ def find_compatible_pairs(
 
             if not matched:
                 # Build a useful reason
+                same_name_and_dim = any(
+                    qty_b.semantic_name == qty_a.semantic_name
+                    and qty_b.physical_dimension == qty_a.physical_dimension
+                    for obs_b in observations_b
+                    for qty_b in obs_b.quantities
+                )
                 same_dim_found = any(
                     qty_b.physical_dimension == qty_a.physical_dimension
                     for obs_b in observations_b
                     for qty_b in obs_b.quantities
                 )
-                if same_dim_found:
+                if same_name_and_dim:
+                    reason = (
+                        f"Units for '{qty_a.semantic_name}' ('{qty_a.units}') are not "
+                        f"convertible in dimension {qty_a.physical_dimension.value}"
+                    )
+                elif same_dim_found:
                     reason = (
                         f"No matching semantic_name '{qty_a.semantic_name}' "
                         f"in experiment B (dimension {qty_a.physical_dimension.value} present "

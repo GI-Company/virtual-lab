@@ -4,6 +4,8 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+from virtual_lab.core.canonical import canonical_json
+
 class ProvenanceRecord:
     def __init__(self, action: str, details: Dict[str, Any]):
         self.action = action
@@ -25,8 +27,8 @@ class ProvenanceTracker:
         self.history.append(ProvenanceRecord(action, details))
 
     def generate_hash(self) -> str:
-        data = [r.to_dict() for r in self.history]
-        return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+        data = [{"action": r.action, "details": r.details} for r in self.history]
+        return hashlib.sha256(canonical_json(data)).hexdigest()
 
     def serialize(self) -> List[Dict[str, Any]]:
         return [r.to_dict() for r in self.history]

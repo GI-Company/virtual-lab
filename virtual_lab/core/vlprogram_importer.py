@@ -12,7 +12,7 @@ import binascii
 import nacl.signing
 from nacl.exceptions import BadSignatureError
 from virtual_lab.core.canonical import canonical_json
-from virtual_lab.core.trusted_signers import get_signer_status, TrustState
+from virtual_lab.core.trusted_signers import get_signer_status, TrustState, SignerRole, verify_signer_role
 
 class VLProgramError(Exception):
     pass
@@ -22,7 +22,8 @@ def load_vlprogram(program_dir: str) -> dict:
     Loads a .vlprogram directory, verifies its manifest signature, 
     verifies its artifact hashes, and dynamically loads its equations module.
     """
-    manifest_path = os.path.join(program_dir, "manifest.json")
+    base_dir = os.path.realpath(program_dir)
+    manifest_path = os.path.join(base_dir, "manifest.json")
     if not os.path.exists(manifest_path):
         raise VLProgramError(f"manifest.json not found in {program_dir}")
         
@@ -43,17 +44,23 @@ def load_vlprogram(program_dir: str) -> dict:
         verify_key = nacl.signing.VerifyKey(binascii.unhexlify(public_key_hex))
         verify_key.verify(manifest_hash, binascii.unhexlify(signature_hex))
     except BadSignatureError:
-        raise VLProgramError(f"Signature mismatch. Signature verification failed.")
+        raise VLProgramError("Signature mismatch. Signature verification failed.")
     except Exception as e:
         raise VLProgramError(f"Invalid signature format: {e}")
         
-    trust_state = get_signer_status(public_key_hex)
+    trust_state, _ = get_signer_status(public_key_hex)
     if trust_state != TrustState.TRUSTED:
         raise VLProgramError(f"SIGNATURE_VALID, AUTHENTICITY_{trust_state.value}")
+    if not verify_signer_role(public_key_hex, SignerRole.PROGRAM_SIGNER):
+        raise VLProgramError("SIGNATURE_VALID, UNAUTHORIZED_SIGNER_ROLE")
         
     # Verify artifacts
     for artifact_name, expected_hash in manifest.get("artifacts", {}).items():
-        artifact_path = os.path.join(program_dir, artifact_name)
+        if os.path.isabs(artifact_name) or ".." in artifact_name.replace("\\", "/").split("/"):
+            raise VLProgramError(f"Invalid artifact path: {artifact_name}")
+        artifact_path = os.path.realpath(os.path.join(base_dir, artifact_name))
+        if not artifact_path.startswith(base_dir + os.sep):
+            raise VLProgramError(f"Artifact path escapes program directory: {artifact_name}")
         if not os.path.exists(artifact_path):
             raise VLProgramError(f"Artifact {artifact_name} not found")
         with open(artifact_path, "rb") as f:
@@ -63,7 +70,7 @@ def load_vlprogram(program_dir: str) -> dict:
             
     # Dynamically load the module (for rho_system.py)
     if "rho_system.py" in manifest.get("artifacts", {}):
-        system_path = os.path.join(program_dir, "rho_system.py")
+        system_path = os.path.realpath(os.path.join(base_dir, "rho_system.py"))
         spec = importlib.util.spec_from_file_location("rho_system", system_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)

@@ -8,11 +8,18 @@ class RunStore:
         from virtual_lab.core.paths import app_data_dir
         self.root = Path(root) if root is not None else app_data_dir()
 
+    def _ledger_path(self) -> Path:
+        legacy = self.root / "ledger.db"
+        unified = self.root / "genesis.db"
+        if legacy.exists() and not unified.exists():
+            return legacy
+        return unified
+
     def save(self, result):
         self.root.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(result, sort_keys=True, separators=(",",":"), allow_nan=False).encode()
         digest = hashlib.sha256(payload).hexdigest()
-        ledger = GenesisLedger(str(self.root/"ledger.db"))
+        ledger = GenesisLedger(str(self._ledger_path()))
         try:
             target = self.root/(digest+".json")
             temp = self.root/("."+str(uuid.uuid4())+".tmp")
@@ -29,12 +36,19 @@ class RunStore:
         return str(target)
 
     def events(self):
-        if not (self.root/"ledger.db").exists(): return []
-        ledger = GenesisLedger(str(self.root/"ledger.db"))
-        try:
-            return [ledger._row_to_event(row).model_dump() for row in ledger.conn.execute("SELECT * FROM ledger_events ORDER BY sequence")]
-        finally:
-            ledger.conn.close()
+        events_by_id = {}
+        for name in ("ledger.db", "genesis.db"):
+            db_file = self.root / name
+            if not db_file.exists():
+                continue
+            ledger = GenesisLedger(str(db_file))
+            try:
+                for row in ledger.conn.execute("SELECT * FROM ledger_events ORDER BY sequence"):
+                    ev = ledger._row_to_event(row).model_dump()
+                    events_by_id[ev["event_id"]] = ev
+            finally:
+                ledger.conn.close()
+        return list(events_by_id.values())
 
     def load_all(self):
         runs=[]
@@ -56,7 +70,7 @@ class RunStore:
         self.root.mkdir(parents=True,exist_ok=True)
         payload=json.dumps(design,sort_keys=True,separators=(",",":"),allow_nan=False).encode()
         digest=hashlib.sha256(payload).hexdigest()
-        ledger=GenesisLedger(str(self.root/"ledger.db"))
+        ledger=GenesisLedger(str(self._ledger_path()))
         try:
             target=self.root/(digest+".json")
             target.write_bytes(payload)

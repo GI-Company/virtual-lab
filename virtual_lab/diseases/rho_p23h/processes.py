@@ -3,7 +3,9 @@ from typing import Dict, Any
 
 def k_rescue_fn(C: float, rescue_max: float, ec50: float, hill_h: float, xp: Any = np) -> float:
     """Hill response form for drug rescue."""
-    # Add epsilon to denominator to prevent div by zero
+    # Clamp concentration to non-negative and add epsilon to denominator to prevent div by zero
+    C = xp.maximum(C, 0.0) if hasattr(xp, "maximum") else max(C, 0.0)
+    ec50 = xp.maximum(ec50, 0.0) if hasattr(xp, "maximum") else max(ec50, 0.0)
     return rescue_max * (C ** hill_h) / (ec50 ** hill_h + C ** hill_h + 1e-12)
 
 def rhs_rho_p23h(t: float, y: np.ndarray, params: Dict[str, float], exposure: Any, xp: Any = np) -> np.ndarray:

@@ -51,14 +51,24 @@ class AgentSystem(BaseModel):
     research_agent: LlmAgent
 
 def get_default_model():
-    """Build the Vertex model from an express-mode key or Google Cloud ADC."""
+    """Build a model using the explicitly selected Gemini or Vertex endpoint."""
     from google.genai import Client
 
     retry_options = types.HttpRetryOptions(
         attempts=3, initial_delay=2, max_delay=8, exp_base=2, jitter=0.2,
         http_status_codes=[429],
     )
-    http_options = types.HttpOptions(retry_options=retry_options)
+    http_options = types.HttpOptions(retry_options=retry_options, timeout=90000)
+
+    provider = os.environ.get('VIRTUALLAB_AI_PROVIDER', 'vertex')
+    if provider == 'gemini':
+        key = os.environ.get('VIRTUALLAB_GEMINI_API_KEY') or os.environ.get('GEMINI_API_KEY')
+        if not key:
+            raise RuntimeError('Gemini API needs a session API key.')
+        client = Client(vertexai=False, api_key=key, http_options=http_options)
+        return GatedGemini(model=os.environ.get('VIRTUALLAB_GEMINI_MODEL', 'gemini-3.5-flash'), client=client)
+    if provider != 'vertex':
+        raise ValueError('Select either Gemini API or Vertex AI.')
 
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")

@@ -66,9 +66,10 @@ class DebouncedSlider(QWidget):
         self.lbl_status.setText(f"Status: {status.value}")
 
 class ControlPanel(QWidget):
-    def __init__(self, gateway, parent=None):
+    def __init__(self, gateway, parent=None, ledger=None):
         super().__init__(parent)
         self.gateway = gateway
+        self.ledger = ledger or getattr(gateway, "ledger", None)
         self.capabilities: Optional[CameraCapabilities] = None
         
         self.requests: Dict[str, ControlState] = {}
@@ -167,6 +168,9 @@ class ControlPanel(QWidget):
         else:
             self.exp_layout.addWidget(QLabel("Manual Sensor not supported"))
 
+        from virtual_lab.gui.shell.layout import _prepare_controls
+        _prepare_controls(self)
+
     def _send_request(self, control_type: str, value: Any):
         req_id = generate_id("REQ")
         state = ControlState(
@@ -229,9 +233,9 @@ class ControlPanel(QWidget):
                     parent_opt.lbl_calib.setText("Calibration: STALE - REVALIDATION REQUIRED")
                     parent_opt.lbl_calib.setStyleSheet("color: #ef4444; font-weight: bold;")
             
-            # Use gateway's parent (InstrumentsWorkspace) to get ledger
-            if hasattr(self.gateway.parent(), "workspace"):
-                self.gateway.parent().workspace.ledger.append(
+            ledger = self.ledger or getattr(self.gateway, "ledger", None) or getattr(self.gateway.parent(), "ledger", None)
+            if ledger is not None:
+                ledger.append(
                     event_id=generate_id("EVT"),
                     actor=Actor(type="SYSTEM", id="virtual_lab"),
                     event_type="INSTRUMENT_CAMERA_CONTROL_APPLIED",

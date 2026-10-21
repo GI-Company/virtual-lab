@@ -105,6 +105,7 @@ def experiment_create(
         Dictionary with creation status and confirmed experiment ID.
     """
     exp_id = experiment_id or f"EXP-{uuid.uuid4().hex[:8]}"
+    store = None
     try:
         store = ExperimentStore()
         store.save_experiment(
@@ -128,6 +129,9 @@ def experiment_create(
             "status": "FAILED",
             "error": str(e)
         }
+    finally:
+        if store is not None:
+            store.close()
 
 
 def experiment_get(experiment_id: str) -> Dict[str, Any]:
@@ -139,6 +143,7 @@ def experiment_get(experiment_id: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing experiment details and attached observation count.
     """
+    store = None
     try:
         store = ExperimentStore()
         exp = store.get_experiment(experiment_id)
@@ -161,6 +166,9 @@ def experiment_get(experiment_id: str) -> Dict[str, Any]:
             "status": "FAILED",
             "error": str(e)
         }
+    finally:
+        if store is not None:
+            store.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,10 +195,16 @@ def dataset_summary_statistics(values: List[float], metric_name: str = "measurem
         }
 
     arr = np.array(values, dtype=float)
+    if not np.all(np.isfinite(arr)):
+        return {
+            "schema_version": "vlab.tool.v1",
+            "status": "FAILED",
+            "error": "Dataset contains non-finite values (NaN or Inf)."
+        }
     count = int(len(arr))
     mean_val = float(np.mean(arr))
     std_val = float(np.std(arr, ddof=1)) if count > 1 else 0.0
-    sem = std_val / np.sqrt(count) if count > 1 else 0.0
+    sem = float(std_val / np.sqrt(count)) if count > 1 else 0.0
 
     return {
         "schema_version": "vlab.tool.v1",
@@ -232,7 +246,8 @@ def provenance_verify(target_path: Optional[str] = None) -> Dict[str, Any]:
 
     if path.endswith(".vlab"):
         report = explain_provenance(path)
-        is_ok = "BUNDLE PROVENANCE VERIFIED" in report or "Genesis hash chain: VERIFIED" in report
+        has_warning = "[WARNING]" in report or "Error:" in report
+        is_ok = not has_warning and ("BUNDLE PROVENANCE VERIFIED" in report or "Genesis hash chain: VERIFIED" in report)
         return {
             "schema_version": "vlab.tool.v1",
             "status": "COMPLETED" if is_ok else "FAILED",
@@ -241,7 +256,15 @@ def provenance_verify(target_path: Optional[str] = None) -> Dict[str, Any]:
         }
     else:
         try:
-            events = verify_genesis_chain(path)
+            events, dag_errors = verify_genesis_chain(path)
+            if dag_errors:
+                return {
+                    "schema_version": "vlab.tool.v1",
+                    "status": "FAILED",
+                    "verdict": "CONFLICTING",
+                    "verified_event_count": len(events),
+                    "dag_errors": dag_errors,
+                }
             return {
                 "schema_version": "vlab.tool.v1",
                 "status": "COMPLETED",
@@ -268,6 +291,7 @@ def artifact_get(artifact_ref: str) -> Dict[str, Any]:
         Returns UNAVAILABLE if the artifact does not exist on disk.
     """
     import hashlib
+    from virtual_lab.core.paths import app_data_dir
 
     if not artifact_ref or not isinstance(artifact_ref, str):
         return {
@@ -277,7 +301,16 @@ def artifact_get(artifact_ref: str) -> Dict[str, Any]:
         }
 
     norm_path = os.path.normpath(artifact_ref.strip())
-    if norm_path.startswith("..") or (os.path.isabs(norm_path) and not norm_path.startswith(os.getcwd())):
+    real_target = os.path.realpath(norm_path)
+    allowed_roots = [
+        os.path.realpath(os.getcwd()),
+        os.path.realpath(str(app_data_dir())),
+    ]
+    is_allowed = any(
+        os.path.commonpath([root, real_target]) == root
+        for root in allowed_roots
+    )
+    if norm_path.startswith("..") or not is_allowed:
         return {
             "schema_version": "vlab.tool.v1",
             "status": "FAILED",

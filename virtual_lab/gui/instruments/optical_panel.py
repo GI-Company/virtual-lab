@@ -16,10 +16,11 @@ from virtual_lab.core.ledger import Actor
 from virtual_lab.gui.instruments.control_panel import ControlPanel
 
 class OpticalPanel(QWidget):
-    def __init__(self, workspace, gateway, parent=None):
+    def __init__(self, workspace, gateway, parent=None, ledger=None):
         super().__init__(parent)
         self.workspace = workspace
         self.gateway = gateway
+        self.ledger = ledger or getattr(gateway, "ledger", None) or getattr(workspace, "ledger", None)
         
         self.current_frame: CameraFrame = None
         self.frozen_frame: CameraFrame = None
@@ -68,7 +69,7 @@ class OpticalPanel(QWidget):
         left_layout.addWidget(self.lbl_focus_assist)
         
         # Control Panel Widget
-        self.control_panel = ControlPanel(self.gateway)
+        self.control_panel = ControlPanel(self.gateway, parent=self, ledger=self.ledger)
         left_layout.addWidget(self.control_panel)
         
         main_layout.addWidget(self.left_panel)
@@ -243,19 +244,20 @@ class OpticalPanel(QWidget):
                         self.lbl_calib.setText(f"Calibration: {mpp:.4f} µm/px | VERIFIED")
                         self.lbl_calib.setStyleSheet("color: #22c55e; font-weight: bold;")
                         
-                        self.workspace.ledger.append(
-                            event_id=generate_id("EVT"),
-                            actor=Actor(type="SYSTEM", id="virtual_lab"),
-                            event_type="OPTICAL_SPATIAL_CALIBRATION_CREATED",
-                            payload={
-                                "calibration_id": calib_id,
-                                "optical_setup_id": self.current_setup.setup_id,
-                                "source_frame_hash": self.current_calibration.source_frame_hash,
-                                "reference_distance": distance,
-                                "pixel_distance": pixel_dist,
-                                "microns_per_pixel": mpp
-                            }
-                        )
+                        if self.ledger is not None:
+                            self.ledger.append(
+                                event_id=generate_id("EVT"),
+                                actor=Actor(type="SYSTEM", id="virtual_lab"),
+                                event_type="OPTICAL_SPATIAL_CALIBRATION_CREATED",
+                                payload={
+                                    "calibration_id": calib_id,
+                                    "optical_setup_id": self.current_setup.setup_id,
+                                    "source_frame_hash": self.current_calibration.source_frame_hash,
+                                    "reference_distance": distance,
+                                    "pixel_distance": pixel_dist,
+                                    "microns_per_pixel": mpp
+                                }
+                            )
             
             self.image_view.getView().removeItem(self.calibration_roi)
             self.calibration_roi = None
@@ -377,11 +379,12 @@ class OpticalPanel(QWidget):
             "timestamp": int(time.time() * 1000)
         }
         
-        self.workspace.ledger.append(
-            event_id=generate_id("EVT"),
-            actor=Actor(type="SYSTEM", id="virtual_lab"),
-            event_type=event_type,
-            payload=payload
-        )
+        if self.ledger is not None:
+            self.ledger.append(
+                event_id=generate_id("EVT"),
+                actor=Actor(type="SYSTEM", id="virtual_lab"),
+                event_type=event_type,
+                payload=payload
+            )
         
         QMessageBox.information(self, "Scientific Capture", f"Successfully committed {event_type} artifact:\n{capture_id}")

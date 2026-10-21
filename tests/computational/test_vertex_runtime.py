@@ -36,3 +36,20 @@ def test_ai_is_enabled_explicitly_and_shuts_down(qapp):
     assert not service.thread.is_alive()
     runtime.shutdown()
     with pytest.raises(RuntimeError, match='closed'): runtime.enable_ai()
+
+
+@pytest.mark.parametrize('provider,vertex', [('gemini',False), ('vertex',True)])
+def test_provider_selects_the_correct_api_endpoint(monkeypatch, provider, vertex):
+    from unittest.mock import MagicMock
+    from google import genai
+    from virtual_lab.ai import vertex_agents
+    client = MagicMock()
+    model = MagicMock()
+    monkeypatch.setattr(genai, 'Client', client)
+    monkeypatch.setattr(vertex_agents, 'GatedGemini', model)
+    monkeypatch.setenv('VIRTUALLAB_AI_PROVIDER', provider)
+    monkeypatch.setenv('VIRTUALLAB_GEMINI_API_KEY', 'gemini-test-key')
+    monkeypatch.setenv('VIRTUALLAB_VERTEX_API_KEY', 'vertex-test-key')
+    vertex_agents.get_default_model()
+    assert client.call_args.kwargs['vertexai'] is vertex
+    assert client.call_args.kwargs['api_key'] == provider+'-test-key'

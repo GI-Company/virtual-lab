@@ -124,6 +124,24 @@ def get_stylesheet() -> str:
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
         height: 0px;
     }}
+
+    QScrollBar:horizontal {{
+        background: {Theme.BG_0};
+        height: 12px;
+        margin: 0px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {Theme.BORDER};
+        min-width: 20px;
+        border-radius: 6px;
+        margin: 2px;
+    }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+        width: 0px;
+    }}
+    QAbstractScrollArea::corner {{
+        background: {Theme.BG_0};
+    }}
     
     /* Dock widgets */
     QDockWidget {{

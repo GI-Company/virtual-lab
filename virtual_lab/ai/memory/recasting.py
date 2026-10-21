@@ -54,12 +54,14 @@ class RecastingEngine:
             start_voxel_ids=seed_ids,
             experiment_scope=experiment_scope,
             max_hops=bounds.max_hops,
-            max_nodes=bounds.max_nodes * 2 # Candidate ceiling
+            max_nodes=bounds.max_nodes * 2, # Candidate ceiling
+            allow_stale=(profile == RecastingProfile.CONFLICT)
         )
 
         # 4. Authoritative resolution / filtering
         valid_voxels = []
         snapshots = []
+        resolution_by_entity = {}
         for v in candidate_voxels:
             state = self.resolver.resolve(v.authoritative_ref)
             if state in (
@@ -73,6 +75,7 @@ class RecastingEngine:
                 continue
 
             valid_voxels.append(v)
+            resolution_by_entity[v.authoritative_ref.entity_id] = state.name
             snapshots.append(AuthoritativeSnapshot(
                 store_kind=v.authoritative_ref.store_kind,
                 entity_type=v.authoritative_ref.entity_type,
@@ -189,14 +192,15 @@ class RecastingEngine:
         # 13. Derive SymbolicSidecar strictly from completed HVIEWArtifact
         sidecar_nodes = []
         for i, n_dict in enumerate(artifact.content.nodes):
+            entity_id = n_dict["authoritative_ref"]["entity_id"]
             sn = RenderedNode(
                 render_id=f"N{i}",
                 voxel_id=n_dict["voxel_id"],
-                entity_id=n_dict["authoritative_ref"]["entity_id"],
+                entity_id=entity_id,
                 entity_type=n_dict["authoritative_ref"]["entity_type"],
                 memory_class=n_dict["memory_class"],
                 activation=n_dict["cognitive_activation"],
-                authoritative_resolution="VALID" # Approximated for deterministic sidecar mapping
+                authoritative_resolution=resolution_by_entity.get(entity_id, "VALID")
             )
             sidecar_nodes.append(sn)
             

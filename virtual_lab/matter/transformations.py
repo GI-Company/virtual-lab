@@ -19,6 +19,6 @@ def create_provenance_event(parent_hash: str, output_hash: str, operation: str, 
         engine=engine,
         engine_version="0.1",
         parameters=parameters,
-        timestamp=datetime.datetime.utcnow().isoformat(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         output_hash=output_hash
     )

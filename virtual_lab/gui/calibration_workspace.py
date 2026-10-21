@@ -30,10 +30,13 @@ class CalibrationWorkspace(QWidget):
         self.custom = QWidget(); custom_layout = QVBoxLayout(self.custom)
         self.path = QLineEdit(); self.path.setPlaceholderText('Absolute CSV path: sample_id,replicate,split,time_min,value')
         self.context = QLineEdit(); self.context.setPlaceholderText('Gene, organism, and experimental condition (required for local data)')
+        self.gene = QLineEdit(); self.gene.setPlaceholderText('Gene label (optional; required for biological object transfer)')
+        self.organism = QLineEdit(); self.organism.setPlaceholderText('Organism (optional; required for biological object transfer)')
+        self.condition = QLineEdit(); self.condition.setPlaceholderText('Experimental condition (optional; required for biological object transfer)')
         self.source = QLineEdit(); self.source.setPlaceholderText('Dataset accession, citation, or local data source (required)')
         self.scale = QComboBox(); self.scale.addItem('Select the input scale',None)
         self.scale.addItem('Linear positive intensity','linear');self.scale.addItem('Log2 intensity','log2')
-        for w in (self.path,self.context,self.source,self.scale):custom_layout.addWidget(w)
+        for w in (self.path,self.context,self.gene,self.organism,self.condition,self.source,self.scale):custom_layout.addWidget(w)
         layout.addWidget(self.custom); self.custom.hide()
         self.mode.currentIndexChanged.connect(self._mode_changed)
         row = QHBoxLayout(); self.fit_button = QPushButton('Fit training replicate and evaluate holdout')
@@ -62,7 +65,7 @@ class CalibrationWorkspace(QWidget):
         self.fit_button.clicked.connect(self._fit);self.save_button.clicked.connect(self._save)
         workspace.activeExperimentChanged.connect(lambda _:self.clear())
         workspace.calibrationResultChanged.connect(self.show_result)
-        for field in (self.path,self.context,self.source):field.textChanged.connect(lambda _:self.clear())
+        for field in (self.path,self.context,self.gene,self.organism,self.condition,self.source):field.textChanged.connect(lambda _:self.clear())
         self.scale.currentIndexChanged.connect(lambda _:self.clear())
 
     def _mode_changed(self,index):
@@ -92,6 +95,12 @@ class CalibrationWorkspace(QWidget):
                     source=self.source.text().strip(),value_scale=self.scale.currentData(),
                     csv_sha256=hashlib.sha256(raw).hexdigest(),
                     limitations=['Local data identity, scale, and split are user-declared, not independently verified.'])
+                if self.gene.text().strip():
+                    metadata['gene'] = self.gene.text().strip()
+                if self.organism.text().strip():
+                    metadata['organism'] = self.organism.text().strip()
+                if self.condition.text().strip():
+                    metadata['condition'] = self.condition.text().strip()
             exp=self.workspace.active_experiment
             result=fit_decay(rows,metadata,exp.id if exp else '')
             self.show_result(result)

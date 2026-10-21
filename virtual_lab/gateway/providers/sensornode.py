@@ -152,7 +152,7 @@ class SensorNodeProvider(DeviceProvider):
                     continue
 
                 overall = dev_state.overall_state()
-                conn_state = "ONLINE" if overall in (InstrumentState.READY, InstrumentState.ACQUIRING, InstrumentState.PARTIAL) else overall.value
+                conn_state = "ONLINE" if overall in (InstrumentState.FULLY_CONNECTED, InstrumentState.PARTIALLY_CONNECTED) else overall.value
 
                 capabilities = []
                 if "camera" in active_channels:

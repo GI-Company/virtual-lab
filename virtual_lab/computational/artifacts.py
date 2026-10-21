@@ -87,7 +87,7 @@ def register(run: CompletedRun, ledger, store) -> NormalizedObservation:
               else ObservationKind.VIRTUAL_ASSAY), quantities=[],
         artifact_path=run.manifest_path, artifact_sha256=run.sha256,
         acquisition_utc=manifest["created_at"], epistemic_state=EpistemicState(manifest["epistemic_state"]),
-        parent_observation_id=manifest.get("parent_run", {}).get("run_id"),
+        parent_observation_id=(manifest.get("parent_run") or {}).get("run_id"),
         notes=json.dumps({"hypothesis": manifest["request"]["hypothesis"],
                           "summary": manifest["summary"], "limitations": manifest["limitations"]}),
     )

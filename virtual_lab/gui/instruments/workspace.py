@@ -419,7 +419,7 @@ class InstrumentsWorkspace(QWidget):
         self.stack_right.addWidget(self.trace_view)
         
         # Mode 2: Microscope View
-        self.optical_panel = OpticalPanel(self.workspace, self.gateway)
+        self.optical_panel = OpticalPanel(self.workspace, self.gateway, ledger=self.ledger)
         self.stack_right.addWidget(self.optical_panel)
         
         right_layout.addWidget(self.stack_right)

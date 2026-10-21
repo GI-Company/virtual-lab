@@ -3,12 +3,6 @@ import json
 import sqlite3
 import os
 import tempfile
-
-import zipfile
-import json
-import sqlite3
-import os
-import tempfile
 import hashlib
 from virtual_lab.core.canonical import canonical_json
 
@@ -19,20 +13,31 @@ class VerifierError(Exception):
     pass
 
 
+def _read_bounded(bundle: zipfile.ZipFile, name_or_info, max_bytes: int) -> bytes:
+    with bundle.open(name_or_info, 'r') as zf:
+        data = zf.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise VerifierError("Zip extraction size limit exceeded.")
+    return data
+
+
 def verify_genesis_chain(db_path: str):
     conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM ledger_events ORDER BY sequence ASC")
-    rows = cursor.fetchall()
-    conn.close()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ledger_events ORDER BY sequence ASC")
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
     
     if not rows:
-        return []
+        return [], []
         
     prev_hash = "0" * 64
     events = []
     for row in rows:
+        keys = row.keys()
         envelope = {
             "schema_version": row["schema_version"],
             "sequence": row["sequence"],
@@ -41,8 +46,8 @@ def verify_genesis_chain(db_path: str):
             "actor": {
                 "type": row["actor_type"],
                 "id": row["actor_id"],
-                "provider": None,
-                "model": None
+                "provider": row["actor_provider"] if "actor_provider" in keys else None,
+                "model": row["actor_model"] if "actor_model" in keys else None,
             },
             "event_type": row["event_type"],
             "payload": json.loads(row["payload_json"]),
@@ -134,7 +139,14 @@ def explain_provenance(vlab_path: str) -> str:
                 has_sig = False
                 
                 for info in bundle.infolist():
-                    if ".." in info.filename or info.filename.startswith("/") or os.path.isabs(info.filename):
+                    norm_parts = info.filename.replace("\\", "/").split("/")
+                    if (
+                        ".." in norm_parts
+                        or "\\" in info.filename
+                        or info.filename.startswith("/")
+                        or os.path.isabs(info.filename)
+                        or ((info.external_attr >> 16) & 0o170000) == 0o120000
+                    ):
                         raise VerifierError("Zip traversal attack detected.")
                     if info.filename in seen_paths:
                         raise VerifierError("Duplicate filename in zip.")
@@ -154,7 +166,7 @@ def explain_provenance(vlab_path: str) -> str:
                     raise VerifierError("Corrupted .vlab bundle, missing manifest.json or manifest.sig")
 
                 # 4. Parse manifest with duplicate-key rejection
-                manifest_bytes = bundle.read("manifest.json")
+                manifest_bytes = _read_bounded(bundle, "manifest.json", MAX_ZIP_SIZE)
                 try:
                     manifest_str = manifest_bytes.decode('utf-8')
                     manifest = json.loads(manifest_str, object_pairs_hook=reject_duplicates)
@@ -171,9 +183,12 @@ def explain_provenance(vlab_path: str) -> str:
                 import binascii
                 from virtual_lab.core.trusted_signers import get_signer, TrustState, SignerRole, verify_signer_role
                 
-                sig_bytes = bundle.read("manifest.sig")
-                # Trust anchor for publisher (using the hardcoded SYSTEM-PUBLISHER key)
-                publisher_pk_hex = "414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935"
+                sig_bytes = _read_bounded(bundle, "manifest.sig", 4096)
+                # Trust anchor for publisher (using manifest publisher_public_key or default SYSTEM-PUBLISHER key)
+                publisher_pk_hex = manifest.get(
+                    "publisher_public_key",
+                    "414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935",
+                )
                 if not verify_signer_role(publisher_pk_hex, SignerRole.BUNDLE_PUBLISHER):
                     raise VerifierError("Publisher key is not trusted for BUNDLE_PUBLISHER role.")
                 
@@ -186,23 +201,33 @@ def explain_provenance(vlab_path: str) -> str:
                 # 7. Validate manifest schema/hash syntax/path uniqueness
                 expected_files = set()
                 for item in manifest.get("contents", []):
+                    if not isinstance(item, dict) or "path" not in item or "sha256" not in item:
+                        raise VerifierError("Malformed manifest content entry.")
                     path = item["path"]
                     if path in expected_files:
                         raise VerifierError(f"Duplicate path in manifest: {path}")
                     expected_files.add(path)
 
-                # 8. Securely extract only allowed entries
+                # 8. Securely extract only allowed entries with bounded stream reads
+                decompressed_total = 0
                 for info in bundle.infolist():
                     if info.filename not in expected_files and info.filename not in ["manifest.json", "manifest.sig"]:
                         raise VerifierError(f"Unlisted artifact found in bundle: {info.filename}")
-                    bundle.extract(info, tmpdir)
+                    data = _read_bounded(bundle, info, MAX_ZIP_SIZE - decompressed_total)
+                    decompressed_total += len(data)
+                    dest = os.path.realpath(os.path.join(tmpdir, info.filename))
+                    if not dest.startswith(os.path.realpath(tmpdir) + os.sep):
+                        raise VerifierError("Zip traversal attack detected.")
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with open(dest, "wb") as out_f:
+                        out_f.write(data)
 
             # 9. Require extracted file set == manifested file set
             extracted_files = set()
             for root, _, files in os.walk(tmpdir):
                 for file in files:
                     full_path = os.path.join(root, file)
-                    rel_path = os.path.relpath(full_path, tmpdir)
+                    rel_path = os.path.relpath(full_path, tmpdir).replace(os.sep, "/")
                     if rel_path not in ["manifest.json", "manifest.sig"]:
                         extracted_files.add(rel_path)
             

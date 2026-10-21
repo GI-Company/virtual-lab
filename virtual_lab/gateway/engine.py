@@ -179,4 +179,6 @@ class GatewayEngine:
             "evidence_count": len(resp.evidence)
         }
         self.invocation_log.append(record)
+        if len(self.invocation_log) > 1000:
+            del self.invocation_log[:-1000]
         logger.info("[AUDIT] tool=%s state=%s req=%s duration=%dms", resp.tool, resp.state.value, resp.request_id, record["duration_ms"])

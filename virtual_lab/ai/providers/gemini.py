@@ -30,7 +30,7 @@ class GeminiProvider:
             
         # Minimal request to verify credentials
         response = test_client.models.generate_content(
-            model='gemini-3.6-flash',
+            model='gemini-2.5-flash',
             contents='Respond with the word "OK".'
         )
         return "OK" in response.text

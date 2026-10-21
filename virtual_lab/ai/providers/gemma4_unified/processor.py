@@ -13,8 +13,6 @@ class Gemma4UnifiedProcessor:
         """
         result = {}
         
-        IMAGE_TOKEN_ID = 256000
-        
         # Calculate patches first if images are present
         if images is not None:
             # Handle single image or list
@@ -31,6 +29,8 @@ class Gemma4UnifiedProcessor:
             patch_dim = P * M # 48
             
             for img in images:
+                if hasattr(img, "mode") and img.mode != "RGB":
+                    img = img.convert("RGB")
                 width, height = img.size
                 
                 # Simple resize to fit a multiple of patch_dim
@@ -75,9 +75,9 @@ class Gemma4UnifiedProcessor:
                     input_ids = []
                     img_idx = 0
                     
-                    BOI_TOKEN_ID = 255999
-                    IMAGE_TOKEN_ID = 258880
-                    EOI_TOKEN_ID = 258882
+                    BOI_TOKEN_ID = getattr(self.config, "boi_token_id", 255999)
+                    IMAGE_TOKEN_ID = getattr(self.config, "image_token_id", 258880)
+                    EOI_TOKEN_ID = getattr(self.config, "eoi_token_id", 258882)
                     
                     for i, part in enumerate(parts):
                         if part:

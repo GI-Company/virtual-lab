@@ -17,12 +17,20 @@ class ModelRequestGate:
         if minimum_interval_s < 0:
             raise ValueError("minimum_interval_s must be nonnegative")
         self.minimum_interval_s = minimum_interval_s
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock | None = None
+        self._lock_loop: asyncio.AbstractEventLoop | None = None
         self._next_start = 0.0
+
+    def _get_lock(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if self._lock is None or self._lock_loop is not loop:
+            self._lock = asyncio.Lock()
+            self._lock_loop = loop
+        return self._lock
 
     @asynccontextmanager
     async def call_slot(self) -> AsyncIterator[None]:
-        async with self._lock:
+        async with self._get_lock():
             delay = self._next_start - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)

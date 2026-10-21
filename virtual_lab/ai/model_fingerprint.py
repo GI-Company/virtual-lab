@@ -28,9 +28,12 @@ def _hash_file_cached(filepath: Path, force: bool = False) -> str:
     if not filepath.exists():
         return "UNAVAILABLE"
         
+    from virtual_lab.core.paths import app_data_dir
     stat = filepath.stat()
     cache_key = f"{filepath.name}_{stat.st_size}_{stat.st_mtime}"
-    cache_file = Path("/tmp") / f"vlab_hash_cache_{hashlib.md5(cache_key.encode()).hexdigest()}.txt"
+    cache_dir = app_data_dir() / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"vlab_hash_cache_{hashlib.sha256(cache_key.encode()).hexdigest()}.txt"
     
     if not force and cache_file.exists():
         return cache_file.read_text().strip()
@@ -38,7 +41,7 @@ def _hash_file_cached(filepath: Path, force: bool = False) -> str:
     sha256_hash = hashlib.sha256()
     with open(filepath, "rb") as f:
         # Read in chunks to handle large models
-        for byte_block in iter(lambda: f.read(4096), b""):
+        for byte_block in iter(lambda: f.read(65536), b""):
             sha256_hash.update(byte_block)
             
     result = sha256_hash.hexdigest()
@@ -49,7 +52,17 @@ def get_current_fingerprint(force_hash: bool = False) -> ModelFingerprint:
     model_path_str = os.environ.get("VIRTUALLAB_LOCAL_MODEL")
     model_file = None
     if model_path_str:
-        model_file = Path(model_path_str) / "gemma-4-e2b-it-Q8_0.gguf"
+        base_path = Path(model_path_str)
+        if base_path.is_file():
+            model_file = base_path
+        elif base_path.is_dir():
+            gguf_candidate = base_path / "gemma-4-e2b-it-Q8_0.gguf"
+            if gguf_candidate.exists():
+                model_file = gguf_candidate
+            else:
+                st_files = sorted(base_path.glob("*.safetensors"))
+                if st_files:
+                    model_file = st_files[0]
         
     weights_hash = "UNAVAILABLE"
     provenance = "UNAVAILABLE"

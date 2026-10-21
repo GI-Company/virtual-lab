@@ -38,7 +38,12 @@ class PacketDecoder:
                 quantity=packet.measurement_type,
                 values=packet.values,
                 units=packet.units,
-                sensor_accuracy=int(packet.accuracy) if packet.accuracy is not None and str(packet.accuracy).isdigit() else None,
+                sensor_accuracy=(
+                    int(packet.accuracy)
+                    if isinstance(packet.accuracy, int)
+                    or (isinstance(packet.accuracy, str) and packet.accuracy.lstrip("-").isdigit())
+                    else None
+                ),
                 calibration_id=None,
                 scientific_state=ScientificState.MEASURED
             )
@@ -92,6 +97,19 @@ class CameraFrameDecoder:
             self.total_rejected += 1
             self.last_error = "Empty JPEG payload"
             raise ValueError(self.last_error)
+
+        if metadata.payload_size_bytes > 0 and len(jpeg_bytes) != metadata.payload_size_bytes:
+            self.total_rejected += 1
+            self.last_error = f"Payload size mismatch (expected {metadata.payload_size_bytes}, got {len(jpeg_bytes)})"
+            raise ValueError(self.last_error)
+
+        if metadata.payload_sha256:
+            import hashlib
+            actual_sha256 = hashlib.sha256(jpeg_bytes).hexdigest()
+            if actual_sha256.lower() != metadata.payload_sha256.lower():
+                self.total_rejected += 1
+                self.last_error = "Payload SHA-256 mismatch"
+                raise ValueError(self.last_error)
             
         frame = CameraFrame(
             schema_version=metadata.schema_version,

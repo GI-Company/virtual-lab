@@ -99,30 +99,20 @@ class ArtifactRegistrationService:
             else:
                 return self._create_rejection(request, "IMMUTABLE_ARTIFACT_CONFLICT", "Target artifact file already exists with different contents.", claimed_sha=actual_sha256)
         else:
-            temp_file = os.path.join(self.artifacts_dir, f"{request.artifact_id}.tmp")
             try:
-                with open(temp_file, "wb") as f:
-                    f.write(payload_bytes)
-                    f.flush()
-                    os.fsync(f.fileno())
-                # Race safe atomic finalization via exclusive create
+                # Race-safe atomic creation via exclusive open
                 fd = os.open(target_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 with os.fdopen(fd, "wb") as final_f:
                     final_f.write(payload_bytes)
                     final_f.flush()
                     os.fsync(final_f.fileno())
-                os.remove(temp_file)
             except FileExistsError:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
                 # Another process won the race
                 with open(target_file, "rb") as f:
                     disk_bytes = f.read()
                 if hashlib.sha256(disk_bytes).hexdigest() != actual_sha256:
                     return self._create_rejection(request, "IMMUTABLE_ARTIFACT_CONFLICT", "Target artifact file was concurrently written with different contents.", claimed_sha=actual_sha256)
             except Exception as e:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
                 return self._create_rejection(request, "STORAGE_FAILURE", f"Failed to persist artifact: {str(e)}", claimed_sha=actual_sha256)
 
         # Read back and verify once more

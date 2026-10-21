@@ -91,6 +91,7 @@ class WorldWorkspace(QWidget):
         self.workspace.simulation_time_h = float(value)
         
     def _sync_timeline(self, value):
-        if self.slider.value() != int(value):
-            self.slider.setValue(int(value))
-            self.lbl_time.setText(f"{float(value):.1f} h")
+        self.slider.blockSignals(True)
+        self.slider.setValue(round(value))
+        self.slider.blockSignals(False)
+        self.lbl_time.setText(f"{float(value):.1f} h")

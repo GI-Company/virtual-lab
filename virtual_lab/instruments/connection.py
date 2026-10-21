@@ -70,14 +70,14 @@ class DeviceConnectionState:
         has_any = s_ok or c_ok or ctl_ok
         has_all = s_ok and c_ok and ctl_ok
         
-        if not has_any:
-            # We don't track DISCOVERABLE_ONLY here since this is only populated upon connection.
-            return InstrumentState.DISCONNECTED
-            
         if (self.sensors and self.sensors.state == SensorChannelState.FAILED) or \
            (self.camera and self.camera.state == CameraChannelState.FAILED) or \
            (self.control and self.control.state == ControlChannelState.FAILED):
             return InstrumentState.ERROR
+            
+        if not has_any:
+            # We don't track DISCOVERABLE_ONLY here since this is only populated upon connection.
+            return InstrumentState.DISCONNECTED
             
         if has_all:
             return InstrumentState.FULLY_CONNECTED

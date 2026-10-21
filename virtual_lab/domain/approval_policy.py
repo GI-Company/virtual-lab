@@ -34,11 +34,19 @@ def get_canonical_json(proposal: Proposal) -> bytes:
 def hash_proposal(proposal: Proposal) -> bytes:
     return hashlib.sha256(get_canonical_json(proposal)).digest()
 
+def _parse_iso_utc(value: str) -> datetime:
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 class ApprovalPolicy:
     """Enforces cryptographic approval for actions before execution."""
     
     def __init__(self, genesis_ledger=None):
         self.genesis_ledger = genesis_ledger
+        self._executed_keys: set[tuple[str, str]] = set()
 
     def sign_proposal(self, proposal: Proposal, signing_key: nacl.signing.SigningKey) -> bytes:
         """Sign the SHA256 hash of the canonical proposal."""
@@ -81,10 +89,15 @@ class ApprovalPolicy:
         if human_actor_id and signer.signer_id != human_actor_id:
             raise ValueError(f"SIGNER_MISMATCH: Expected {human_actor_id}, got {signer.signer_id}")
 
-        # 2. Check expiration
-        now = datetime.now(timezone.utc).isoformat()
-        if now > proposal.expires_at:
+        # 2. Check expiration and replay
+        now = datetime.now(timezone.utc)
+        expires_at = _parse_iso_utc(proposal.expires_at)
+        if now > expires_at:
             raise ValueError("APPROVAL_EXPIRED")
+
+        replay_key = (proposal.proposal_id, proposal.nonce)
+        if replay_key in self._executed_keys:
+            raise ValueError("PROPOSAL_ALREADY_EXECUTED")
 
         # 3. Genesis verification
         if self.genesis_ledger:
@@ -92,21 +105,39 @@ class ApprovalPolicy:
             if not record:
                 raise ValueError("APPROVAL_NOT_FOUND_IN_GENESIS")
                 
-            # Target and parameters EXACTLY identical to the immutable ledger record
+            # Target, action_type, and parameters EXACTLY identical to the immutable ledger record
             if record.get("target") != proposal.target:
                 raise ValueError("TARGET_MISMATCH")
+            if "action_type" in record and record.get("action_type") != proposal.action_type:
+                raise ValueError("ACTION_TYPE_MISMATCH")
             if record.get("parameters") != proposal.parameters:
                 raise ValueError("PARAMETERS_MISMATCH")
                 
-            # Check for HUMAN_DECISION event for this proposal to ensure it was approved
+            # Check for HUMAN_DECISION event for this proposal and ensure it hasn't already executed
             events = self.genesis_ledger.get_events_by_proposal(proposal.proposal_id)
             approved = False
             for evt in events:
+                if evt.event_type == "ACTION_EXECUTED":
+                    raise ValueError("PROPOSAL_ALREADY_EXECUTED")
                 if evt.event_type == "HUMAN_DECISION" and evt.payload.get("decision") == "APPROVED":
+                    recorded_sig = evt.payload.get("signature")
+                    if recorded_sig and recorded_sig != signature.hex():
+                        raise ValueError("SIGNATURE_MISMATCH_IN_GENESIS")
                     approved = True
             if not approved:
                 raise ValueError("PROPOSAL_NOT_APPROVED_IN_GENESIS")
 
         # 4. Execute (Fail closed, no mock executors)
-        return execute_fn(proposal)
+        result = execute_fn(proposal)
+        self._executed_keys.add(replay_key)
+        if self.genesis_ledger:
+            from virtual_lab.core.ledger import Actor
+            import uuid
+            self.genesis_ledger.append(
+                f"EXEC_{proposal.proposal_id}_{uuid.uuid4().hex[:8]}",
+                Actor(type="HUMAN", id=signer.signer_id),
+                "ACTION_EXECUTED",
+                {"proposal_id": proposal.proposal_id, "nonce": proposal.nonce, "action_type": proposal.action_type},
+            )
+        return result
 

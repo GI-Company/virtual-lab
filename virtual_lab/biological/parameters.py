@@ -1,18 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional, Any
-from enum import Enum
-
-class EpistemicState(Enum):
-    DEFINED = "DEFINED"
-    MEASURED = "MEASURED"
-    CURATED = "CURATED"
-    DERIVED = "DERIVED"
-    CALCULATED = "CALCULATED"
-    SIMULATED = "SIMULATED"
-    PREDICTED = "PREDICTED"
-    INFERRED = "INFERRED"
-    UNKNOWN = "UNKNOWN"
-    MODEL_ASSUMPTION = "MODEL_ASSUMPTION"
+from virtual_lab.domain.epistemics import EpistemicState
 
 @dataclass(frozen=True)
 class Parameter:

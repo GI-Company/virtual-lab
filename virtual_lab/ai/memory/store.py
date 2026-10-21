@@ -133,8 +133,8 @@ class MemoryStore:
             sp_meta.temporal_basis.name if sp_meta else None,
             voxel.cognitive_activation, voxel.access_count, voxel.last_accessed, voxel.semantic_label
         ))
-        self.conn.commit()
         self._increment_revision()
+        self.conn.commit()
 
     def upsert_edge(self, edge: HyperEdge):
         self.conn.execute("""
@@ -146,8 +146,8 @@ class MemoryStore:
             edge.relation_type, edge.scope.name, edge.weight,
             json.dumps(edge.cross_experiment_ids) if edge.cross_experiment_ids else None
         ))
-        self.conn.commit()
         self._increment_revision()
+        self.conn.commit()
 
     def get_voxel(self, voxel_id: str) -> Optional[HyperVoxel]:
         row = self.conn.execute("SELECT * FROM voxels WHERE voxel_id = ?", (voxel_id,)).fetchone()

@@ -5,10 +5,55 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QPushButton, QLabel, QListWidget, QListWidgetItem,
-    QPlainTextEdit, QSplitter, QInputDialog, QTabWidget, QScrollArea, QLayout)
+    QPlainTextEdit, QSplitter, QInputDialog, QTabWidget, QScrollArea, QLayout, QCheckBox)
 
 from virtual_lab.gui.services.study_service import StudyService
 from virtual_lab.gui.services.simulation_result import SimulationResult
+
+
+class SupportingResults(QScrollArea):
+    """Scrollable native checkboxes, including on macOS accessibility trees."""
+    def __init__(self):
+        super().__init__()
+        self.setWidgetResizable(True)
+        content = QWidget()
+        self.choices_layout = QVBoxLayout(content)
+        self.choices_layout.setAlignment(Qt.AlignTop)
+        self.setWidget(content)
+        self.rows = []
+        self.boxes = {}
+
+    def clear(self):
+        while self.choices_layout.count():
+            widget = self.choices_layout.takeAt(0).widget()
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
+        self.rows.clear()
+        self.boxes.clear()
+
+    def addItem(self, item):
+        self.rows.append(item)
+
+    def count(self):
+        return len(self.rows)
+
+    def item(self, index):
+        return self.rows[index]
+
+    def setItemWidget(self, item, widget):
+        self.boxes[id(item)] = widget
+        self.choices_layout.addWidget(widget)
+
+    def itemWidget(self, item):
+        return self.boxes[id(item)]
+
+    def removeItem(self, item):
+        box = self.boxes.pop(id(item))
+        self.choices_layout.removeWidget(box)
+        box.hide()
+        box.deleteLater()
+        self.rows.remove(item)
 
 
 class StudyPathEdit(QLineEdit):
@@ -139,6 +184,7 @@ class ProjectsWorkspace(QWidget):
         workspace.activeExperimentChanged.connect(self.refresh_results)
         workspace.observationCommitted.connect(self.refresh_results)
         workspace.observationStaged.connect(self.refresh_results)
+        workspace.aiStateChanged.connect(lambda _: self._refresh_notebook())
         self.refresh_projects()
         self.service.restore()
         if workspace.active_experiment:
@@ -170,7 +216,7 @@ class ProjectsWorkspace(QWidget):
         self.decision = QComboBox()
         for label, value in [('Inconclusive', 'inconclusive'), ('Supports hypothesis within stated scope', 'supports_within_scope'),
                              ('Does not support hypothesis', 'does_not_support')]: self.decision.addItem(label, value)
-        self.evidence_choices = QListWidget(); self.evidence_choices.setMaximumHeight(120)
+        self.evidence_choices = SupportingResults(); self.evidence_choices.setMaximumHeight(120)
         self.save_conclusion_button = QPushButton('Save researcher conclusion')
         self.save_conclusion_button.clicked.connect(lambda: self._action(self._save_conclusion,
             'Human interpretation saved with its plan and selected result hashes. Export the study to preserve the full record.'))
@@ -203,22 +249,55 @@ class ProjectsWorkspace(QWidget):
                         self.limitations.setPlainText(value['content']['limitations'])
                         self.decision.setCurrentIndex(self.decision.findData(value['content']['decision']))
                         checked = {r['observation_id'] for r in value['result_refs']}
-        self.evidence_choices.clear()
         observations = self.service.store.get_observations_for_experiment(experiment_id) if exp else []
+        # Reuse controls by durable observation ID. Recreating every checkbox on
+        # each state signal invalidates macOS accessibility objects and focus.
+        existing = {row.data(Qt.UserRole): row for row in self.evidence_choices.rows}
+        keep = set()
         for obs in observations:
-            if obs.instrument_id in ('research_plan', 'research_conclusion'): continue
-            item = QListWidgetItem(f'{obs.instrument_id} · {obs.epistemic_state.value} · {obs.session_id[:8]}')
-            item.setData(Qt.UserRole, obs.observation_id)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            if obs.instrument_id in ('research_plan', 'research_conclusion'):
+                continue
+            keep.add(obs.observation_id)
+            item = existing.get(obs.observation_id)
+            if item is None:
+                item = QListWidgetItem()
+                item.setData(Qt.UserRole, obs.observation_id)
+                self.evidence_choices.addItem(item)
+                choice = QCheckBox()
+                choice.setObjectName('supporting-result-' + obs.observation_id)
+                choice.toggled.connect(lambda selected, row=item: row.setCheckState(
+                    Qt.Checked if selected else Qt.Unchecked))
+                self.evidence_choices.setItemWidget(item, choice)
+            else:
+                choice = self.evidence_choices.itemWidget(item)
+            text = f'{obs.instrument_id} · {obs.epistemic_state.value} · {obs.session_id[:8]}'
+            choice.setText(text)
+            choice.setAccessibleName(text)
+            choice.setAccessibleDescription('Include this saved result as supporting evidence for the conclusion')
+            choice.setChecked(obs.observation_id in checked)
             item.setCheckState(Qt.Checked if obs.observation_id in checked else Qt.Unchecked)
-            self.evidence_choices.addItem(item)
+        for row in list(self.evidence_choices.rows):
+            if row.data(Qt.UserRole) not in keep:
+                self.evidence_choices.removeItem(row)
+        from virtual_lab.gui.shell.layout import _prepare_controls
+        _prepare_controls(self.notebook)
         self.save_plan_button.setEnabled(exp is not None)
         self.save_conclusion_button.setEnabled(exp is not None)
         plans = sum(o.instrument_id == 'research_plan' for o in observations)
         conclusions = sum(o.instrument_id == 'research_conclusion' for o in observations)
         results = sum(o.instrument_id not in ('research_plan', 'research_conclusion') for o in observations)
+        ai_state = getattr(self.workspace, 'ai_state', 'off')
+        if ai_state == 'used':
+            ai_suffix = 'Optional AI assistance active in this session.'
+            prefix = 'Research workflow'
+        elif ai_state == 'enabled':
+            ai_suffix = 'Optional AI assistance enabled (not yet queried; no AI required for numerical runs).'
+            prefix = 'Research workflow'
+        else:
+            ai_suffix = 'No AI required.'
+            prefix = 'Manual research'
         self.workflow_status.setText('Create/open an experiment to begin.' if exp is None else
-            f'Manual research: {plans} plan(s) · {results} saved result(s) · {conclusions} conclusion(s). No AI required.')
+            f'{prefix}: {plans} plan(s) · {results} saved result(s) · {conclusions} conclusion(s). {ai_suffix}')
 
     def _save_plan(self):
         self.service.save_research_plan(**{key: field.toPlainText() for key, field in self.plan_fields.items()})

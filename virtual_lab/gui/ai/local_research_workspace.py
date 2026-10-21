@@ -1,13 +1,14 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QGroupBox, 
     QSplitter, QGridLayout, QFrame, QTextEdit, QLineEdit, QStackedWidget, QListWidget, QListWidgetItem,
-    QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsTextItem, QGraphicsRectItem
+    QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsTextItem, QGraphicsRectItem, QComboBox
 )
 from PySide6.QtCore import Qt, QThread, QObject, Signal, Slot
 from PySide6.QtGui import QColor, QPen, QBrush, QFont, QPainter
 import json
 import os
 import uuid
+import threading
 
 class ChatTextEdit(QTextEdit):
     returnPressed = Signal()
@@ -45,16 +46,34 @@ class AgentRuntimeWorker(QObject):
         self.memory_revision = memory_revision
         self.proj_dict = proj_dict
         self.agent_runtime = agent_runtime
-        
+        self._active_future = None
+        self._cancel_requested = threading.Event()
+        self.initial_prompt = None
+        self.resume_request = None
+
+    @Slot()
+    def start(self):
+        """QObject receiver keeps execution on the worker's QThread."""
+        if self.resume_request is not None:
+            self.resume_episode(*self.resume_request)
+        elif self.initial_prompt:
+            self.run_episode(self.initial_prompt)
+
+    def cancel(self):
+        self._cancel_requested.set()
+        if self._active_future is not None and not self._active_future.done():
+            self._active_future.cancel()
+
     @Slot(str)
     def run_episode(self, user_request):
         try:
-            self.episode_started.emit("Starting Google Vertex ADK Multi-Agent episode")
+            self.episode_started.emit("Starting Gemini ADK multi-agent episode")
             from google.genai import types
 
             async def _run_adk():
                 session = await self.agent_runtime.get_or_create_session(self.experiment_id, user_id="local_operator")
                 final_text = ""
+                seen_turns = set()
                 async for event in self.agent_runtime.runner.run_async(
                     user_id="local_operator",
                     session_id=session.id,
@@ -64,32 +83,51 @@ class AgentRuntimeWorker(QObject):
                         self.reasoning_step_added.emit({"type": "DELEGATION", "id": "delegation", "tool": f"Director \u2192 {event.actions.transfer_to_agent}"})
                         self.stream_event.emit("DELEGATION", {"raw": f"Director \u2192 {event.actions.transfer_to_agent}"})
                     if event.content and event.content.parts:
+                        is_partial = bool(getattr(event, "partial", False))
+                        author = event.author or "Director"
                         for p in event.content.parts:
                             if p.text:
-                                display_text = p.text
+                                display_text = p.text.strip()
+                                if not display_text:
+                                    continue
                                 try:
                                     handoff = __import__('json').loads(p.text)
                                     if handoff.get("schema_version") == "vlab.handoff.v1":
-                                        display_text = handoff.get("summary") or p.text
+                                        display_text = (handoff.get("summary") or p.text).strip()
+                                        if not is_partial:
+                                            self.reasoning_step_added.emit({
+                                                "type": "HANDOFF",
+                                                "id": author,
+                                                "tool": f"{author}: {display_text[:80]}",
+                                            })
+                                        continue
                                 except (ValueError, AttributeError):
                                     pass
+                                turn_key = (author, display_text)
+                                if is_partial or turn_key in seen_turns:
+                                    continue
+                                seen_turns.add(turn_key)
                                 final_text = display_text
-                                self.stream_delta.emit(f"[{event.author or 'Director'}]: {display_text}\n\n")
+                                prefix = "" if author in ("Director", "Virtual_Lab_Director") else f"[{author}]: "
+                                self.stream_delta.emit(f"{prefix}{display_text}\n\n")
                             elif p.function_call:
                                 tool_name = p.function_call.name
                                 self.reasoning_step_added.emit({"type": "TOOL_REQUEST", "id": "tool", "tool": tool_name})
-                                self.stream_event.emit("TOOL_CALL_STARTED", {"raw": f"[{event.author} TOOL]: {tool_name}"})
+                                self.stream_event.emit("TOOL_CALL_STARTED", {"raw": f"[{author} TOOL]: {tool_name}"})
                             elif p.function_response:
                                 self.reasoning_step_added.emit({"type": "TOOL_RESULT", "id": "tool", "tool": "completed"})
-                                self.stream_event.emit("TOOL_CALL_COMPLETE", {"raw": f"[{event.author} RESULT DONE]"})
+                                self.stream_event.emit("TOOL_CALL_COMPLETE", {"raw": f"[{author} RESULT DONE]"})
                 return final_text
 
             # Execute in the background thread's event loop
-            future = self.agent_runtime.run_coroutine(_run_adk())
+            self._active_future = self.agent_runtime.run_coroutine(_run_adk())
+            if self._cancel_requested.is_set():
+                self._active_future.cancel()
 
             # Wait for it, but safely yield to qt event loop or just block since this is a QThread
-            answer = future.result()
-            self.answer_completed.emit(answer, ["VERTEX_ADK", "MULTI_AGENT"])
+            answer = self._active_future.result()
+            provider_tag = 'GEMINI_API' if os.environ.get('VIRTUALLAB_AI_PROVIDER') == 'gemini' else 'VERTEX_ADK'
+            self.answer_completed.emit(answer, [provider_tag, "MULTI_AGENT"])
 
         except Exception as e:
             self.episode_failed.emit(str(e))
@@ -202,10 +240,10 @@ class LocalResearchWorkspace(QWidget):
         # 1. LocalResearchStatusPanel (Header)
         self.status_panel = QFrame()
         self.status_panel.setStyleSheet("background-color: #1e293b; border-radius: 4px; padding: 5px;")
-        self.status_panel.setFixedHeight(76)
+        self.status_panel.setMinimumHeight(76)
         status_layout = QHBoxLayout(self.status_panel)
         
-        self.lbl_cert = QLabel("Google Vertex AI Agent Development Kit")
+        self.lbl_cert = QLabel("Gemini · Google Agent Development Kit")
         self.lbl_cert.setStyleSheet("color: #94a3b8;")
         status_layout.addWidget(self.lbl_cert)
         
@@ -219,10 +257,23 @@ class LocalResearchWorkspace(QWidget):
         
         main_layout.addWidget(self.status_panel)
 
+        provider_row = QHBoxLayout()
+        self.provider = QComboBox()
+        self.provider.setAccessibleName('AI provider')
+        self.provider.addItem('Vertex AI (Google Cloud)', 'vertex')
+        self.provider.addItem('Gemini API (AI Studio)', 'gemini')
+        self.provider.setCurrentIndex(max(0, self.provider.findData(os.environ.get('VIRTUALLAB_AI_PROVIDER', 'vertex'))))
+        self.txt_model = QLineEdit(os.environ.get(self._model_env(), 'gemini-3.5-flash'))
+        self.txt_model.setAccessibleName('Gemini model')
+        provider_row.addWidget(QLabel('Provider')); provider_row.addWidget(self.provider)
+        provider_row.addWidget(QLabel('Model')); provider_row.addWidget(self.txt_model)
+        main_layout.addLayout(provider_row)
+        self.provider.currentIndexChanged.connect(self._provider_changed)
         credential_row = QHBoxLayout()
         self.txt_vertex_key = QLineEdit()
         self.txt_vertex_key.setEchoMode(QLineEdit.Password)
-        self.txt_vertex_key.setPlaceholderText("Vertex express-mode API key for this session")
+        self.txt_vertex_key.setPlaceholderText("API key for the selected provider · this session only")
+        self.txt_vertex_key.setAccessibleName('Session API key')
         self.btn_vertex_key = QPushButton("Use key")
         self.btn_vertex_key.clicked.connect(self._apply_vertex_key)
         credential_row.addWidget(self.txt_vertex_key)
@@ -231,9 +282,11 @@ class LocalResearchWorkspace(QWidget):
         
         # Splitter for main content
         splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter = splitter
         
         # Left side: Memory and HVIEW
         left_widget = QWidget()
+        self.left_pane = left_widget
         left_layout = QVBoxLayout(left_widget)
         
         # 2. MemoryPanel
@@ -320,17 +373,43 @@ class LocalResearchWorkspace(QWidget):
         self._vertex_verified = False
         self._refresh_vertex_status()
 
+    def set_compact_mode(self, compact: bool):
+        """Hide the HVIEW side-pane when docked as a narrow drawer so the main workspace isn't squeezed."""
+        self.left_pane.setVisible(not compact)
+        self.lbl_metrics.setVisible(not compact)
+        self.status_panel.setMinimumHeight(40 if compact else 76)
+
     def _refresh_vertex_status(self):
-        configured = bool(os.environ.get("VIRTUALLAB_VERTEX_API_KEY") or os.environ.get("GOOGLE_CLOUD_PROJECT"))
+        gemini = self.provider.currentData() == 'gemini'
+        name = 'Gemini API' if gemini else 'Vertex AI'
+        configured = bool((os.environ.get('VIRTUALLAB_GEMINI_API_KEY') or os.environ.get('GEMINI_API_KEY')) if gemini else
+            (os.environ.get('VIRTUALLAB_VERTEX_API_KEY') or os.environ.get('GOOGLE_CLOUD_PROJECT')))
         if self._vertex_verified:
-            status = "Vertex AI: live request succeeded"
+            status = name + ": live request succeeded"
         elif configured:
-            status = "Vertex AI: configured; verify with a request"
+            status = name + ": configured; verify with a request"
         else:
-            status = "Vertex AI: credential required"
+            status = name + ": credential required"
         self.lbl_egress.setText(status)
         self.btn_send.setEnabled(configured)
         self.btn_research.setEnabled(configured)
+
+    def _model_env(self):
+        return 'VIRTUALLAB_GEMINI_MODEL' if self.provider.currentData() == 'gemini' else 'VIRTUALLAB_VERTEX_MODEL'
+
+    def _provider_changed(self, *_):
+        if self.agent_thread is not None and self.agent_thread.isRunning():
+            self.provider.blockSignals(True)
+            self.provider.setCurrentIndex(self.provider.findData(os.environ.get('VIRTUALLAB_AI_PROVIDER', 'vertex')))
+            self.provider.blockSignals(False)
+            self.lbl_egress.setText('Wait for the current request before changing providers')
+            return
+        os.environ['VIRTUALLAB_AI_PROVIDER'] = self.provider.currentData()
+        self.txt_model.setText(os.environ.get(self._model_env(), 'gemini-3.5-flash'))
+        if self.agent_runtime is not None:
+            self.agent_runtime.reset_runner()
+        self._vertex_verified = False
+        self._refresh_vertex_status()
 
     def _apply_vertex_key(self):
         key = self.txt_vertex_key.text().strip()
@@ -339,7 +418,14 @@ class LocalResearchWorkspace(QWidget):
         if self.agent_thread is not None and self.agent_thread.isRunning():
             self.lbl_egress.setText("Wait for the current request before changing the key")
             return
-        os.environ["VIRTUALLAB_VERTEX_API_KEY"] = key
+        model = self.txt_model.text().strip()
+        if not model or len(model) > 120:
+            self.lbl_egress.setText('Enter a model name before applying the session key')
+            return
+        os.environ['VIRTUALLAB_AI_PROVIDER'] = self.provider.currentData()
+        key_env = 'VIRTUALLAB_GEMINI_API_KEY' if self.provider.currentData() == 'gemini' else 'VIRTUALLAB_VERTEX_API_KEY'
+        os.environ[key_env] = key
+        os.environ[self._model_env()] = model
         if self.agent_runtime is not None:
             self.agent_runtime.reset_runner()
         self.txt_vertex_key.clear()
@@ -358,7 +444,7 @@ class LocalResearchWorkspace(QWidget):
         if self.agent_thread is not None and self.agent_thread.isRunning():
             return
         if not self.btn_send.isEnabled():
-            self.lbl_answer.setText("Configure Vertex AI before sending a request.")
+            self.lbl_answer.setText("Configure the selected AI provider before sending a request.")
             return
         
         self.txt_prompt.clear()
@@ -393,6 +479,8 @@ class LocalResearchWorkspace(QWidget):
     def shutdown_agent_runtime(self):
         if self.agent_thread is not None and self.agent_thread.isRunning():
             self.lst_trace.addItem("SYSTEM: Requesting agent cancellation...")
+            if self.agent_worker is not None and hasattr(self.agent_worker, "cancel"):
+                self.agent_worker.cancel()
             self.agent_thread.quit()
             if not self.agent_thread.wait(5000):
                 self.lst_trace.addItem("SYSTEM: WARNING - Agent thread failed to stop within 5s")
@@ -404,8 +492,8 @@ class LocalResearchWorkspace(QWidget):
 
     def closeEvent(self, event):
         if not self.shutdown_agent_runtime():
-            # If it didn't shut down, maybe we force close anyway?
-            pass
+            event.ignore()
+            return
         super().closeEvent(event)
 
     def _start_worker(self, prompt=None):
@@ -450,12 +538,12 @@ class LocalResearchWorkspace(QWidget):
         
         # Proper termination wiring
         self.agent_thread.finished.connect(self.agent_worker.deleteLater)
-        self.agent_worker.answer_completed.connect(lambda text, tags: self.agent_thread.quit())
-        self.agent_worker.episode_failed.connect(lambda err: self.agent_thread.quit())
-        self.agent_worker.approval_required.connect(lambda ep, actions: self.agent_thread.quit())
+        self.agent_worker.answer_completed.connect(self.agent_thread.quit, Qt.DirectConnection)
+        self.agent_worker.episode_failed.connect(self.agent_thread.quit, Qt.DirectConnection)
+        self.agent_worker.approval_required.connect(self.agent_thread.quit, Qt.DirectConnection)
         
-        if prompt:
-            self.agent_thread.started.connect(lambda: self.agent_worker.run_episode(prompt))
+        self.agent_worker.initial_prompt = prompt
+        self.agent_thread.started.connect(self.agent_worker.start)
         
         self.agent_thread.start()
         
@@ -484,13 +572,14 @@ class LocalResearchWorkspace(QWidget):
         
         # Proper termination wiring
         self.agent_thread.finished.connect(self.agent_worker.deleteLater)
-        self.agent_worker.answer_completed.connect(lambda text, tags: self.agent_thread.quit())
-        self.agent_worker.episode_failed.connect(lambda err: self.agent_thread.quit())
-        self.agent_worker.approval_required.connect(lambda ep, actions: self.agent_thread.quit())
+        self.agent_worker.answer_completed.connect(self.agent_thread.quit, Qt.DirectConnection)
+        self.agent_worker.episode_failed.connect(self.agent_thread.quit, Qt.DirectConnection)
+        self.agent_worker.approval_required.connect(self.agent_thread.quit, Qt.DirectConnection)
         
-        self.agent_thread.started.connect(lambda: self.agent_worker.resume_episode(
+        self.agent_worker.resume_request = (
             self.pending_episode, self.pending_tool_name, self.pending_tool_args, decision_result
-        ))
+        )
+        self.agent_thread.started.connect(self.agent_worker.start)
         
         self.agent_thread.start()
         self.approval_panel.hide()
@@ -532,10 +621,14 @@ class LocalResearchWorkspace(QWidget):
         self.lbl_tags.setText(" ".join([f"[{t}]" for t in tags]))
         self._vertex_verified = True
         self._refresh_vertex_status()
+        if hasattr(self.workspace_state, "ai_state"):
+            self.workspace_state.ai_state = "used"
         
     @Slot(str)
     def _on_stream_delta(self, delta):
         current = self.lbl_answer.text()
+        if delta and len(delta.strip()) > 20 and delta.strip() in current:
+            return
         self.lbl_answer.setText(current + delta)
         
     @Slot(str, dict)
@@ -549,10 +642,14 @@ class LocalResearchWorkspace(QWidget):
         
     @Slot(str)
     def _on_error(self, err):
+        for variable in ('VIRTUALLAB_GEMINI_API_KEY', 'GEMINI_API_KEY', 'VIRTUALLAB_VERTEX_API_KEY'):
+            key = os.environ.get(variable)
+            if key:
+                err = err.replace(key, '[REDACTED]')
         if "429" in err and "RESOURCE_EXHAUSTED" in err:
             self.lbl_answer.setText(
-                "Vertex AI quota or capacity was exhausted during this research episode. "
-                "No research brief was completed. Try again when Vertex capacity is available."
+                "AI quota or capacity was exhausted during this research episode. "
+                "No research brief was completed. Try again when capacity is available."
             )
         else:
             self.lbl_answer.setText(f"Error: {err}")

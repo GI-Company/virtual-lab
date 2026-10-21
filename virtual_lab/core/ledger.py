@@ -45,8 +45,11 @@ class GenesisLedger:
         dirname = os.path.dirname(self.db_path)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, timeout=30.0)
         self.conn.row_factory = sqlite3.Row
+        if self.db_path != ":memory:":
+            self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=30000")
         
         self.conn.execute("""
         CREATE TABLE IF NOT EXISTS ledger_events (
@@ -55,6 +58,8 @@ class GenesisLedger:
             timestamp_utc TEXT,
             actor_type TEXT,
             actor_id TEXT,
+            actor_provider TEXT,
+            actor_model TEXT,
             event_type TEXT,
             payload_json TEXT,
             parent_hash TEXT,
@@ -62,6 +67,11 @@ class GenesisLedger:
             schema_version TEXT
         )
         """)
+        existing_cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(ledger_events)")}
+        if "actor_provider" not in existing_cols:
+            self.conn.execute("ALTER TABLE ledger_events ADD COLUMN actor_provider TEXT")
+        if "actor_model" not in existing_cols:
+            self.conn.execute("ALTER TABLE ledger_events ADD COLUMN actor_model TEXT")
         
         self.conn.execute("""
         CREATE TRIGGER IF NOT EXISTS prevent_ledger_update
@@ -101,14 +111,17 @@ class GenesisLedger:
         self.conn.execute(
             """
             INSERT INTO ledger_events (
-                sequence, event_id, timestamp_utc, actor_type, actor_id, 
+                sequence, event_id, timestamp_utc, actor_type, actor_id,
+                actor_provider, actor_model,
                 event_type, payload_json, parent_hash, event_hash, schema_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event.sequence, event.event_id, event.timestamp_utc, 
-                event.actor.type, event.actor.id, event.event_type, 
-                json.dumps(event.payload), event.parent_hash, 
+                event.actor.type, event.actor.id,
+                event.actor.provider, event.actor.model,
+                event.event_type, 
+                canonical_json(event.payload).decode('utf-8'), event.parent_hash, 
                 event.event_hash, event.schema_version
             )
         )
@@ -123,7 +136,13 @@ class GenesisLedger:
         return self._row_to_event(row)
         
     def _row_to_event(self, row: sqlite3.Row) -> LedgerEvent:
-        actor = Actor(type=row["actor_type"], id=row["actor_id"])
+        keys = row.keys()
+        actor = Actor(
+            type=row["actor_type"],
+            id=row["actor_id"],
+            provider=row["actor_provider"] if "actor_provider" in keys else None,
+            model=row["actor_model"] if "actor_model" in keys else None,
+        )
         return LedgerEvent(
             schema_version=row["schema_version"],
             sequence=row["sequence"],

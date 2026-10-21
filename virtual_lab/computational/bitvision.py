@@ -77,10 +77,18 @@ def _text(data: memoryview):
     return bytes(data).decode('utf-8')
 
 
+def _get_one(data: memoryview, field: int, message: str = 'Malformed ONNX protobuf.'):
+    values = _get(data, field)
+    if not values:
+        raise ValueError(message)
+    return values[0]
+
+
 def _value_info(data: memoryview):
-    name = _text(_get(data, 1)[0])
-    tensor = _get(_get(data, 2)[0], 1)[0]
-    dtype = _get(tensor, 1)[0]
+    name = _text(_get_one(data, 1))
+    type_proto = _get_one(data, 2)
+    tensor = _get_one(type_proto, 1)
+    dtype = _get_one(tensor, 1)
     shape = _get(tensor, 2)
     dimensions = []
     if shape:
@@ -93,7 +101,7 @@ def _value_info(data: memoryview):
 def onnx_signature(path: Path) -> dict:
     """Read protobuf graph signature only; this is not a full ONNX semantic checker."""
     model = memoryview(path.read_bytes())
-    graph = _get(model, 7)[0]
+    graph = _get_one(model, 7)
     inputs = dict(_value_info(value) for value in _get(graph, 11))
     outputs = dict(_value_info(value) for value in _get(graph, 12))
     if inputs != EXPECTED_INPUTS or set(outputs) != set(EXPECTED_OUTPUTS):
@@ -102,14 +110,16 @@ def onnx_signature(path: Path) -> dict:
         expected_dtype, expected_dimensions = EXPECTED_OUTPUTS[name]
         if dtype != expected_dtype or len(dimensions) != len(expected_dimensions):
             raise ValueError('ONNX output type or rank differs from BitVision interface.')
-        if any(actual != expected for actual, expected in zip(dimensions, expected_dimensions)
-               if isinstance(actual, int) or expected == 'batch'):
+        if any(
+            (actual != expected if expected != 'batch' else not isinstance(actual, str))
+            for actual, expected in zip(dimensions, expected_dimensions)
+        ):
             raise ValueError('ONNX output dimensions differ from BitVision interface.')
     opsets = _get(model, 8)
     versions = [_get(value, 2)[0] for value in opsets if _get(value, 2)]
     if not versions or max(versions) < 18:
         raise ValueError('Expected an ONNX opset 18 or newer model.')
-    initializer_types = Counter(_get(value, 2)[0] for value in _get(graph, 5))
+    initializer_types = Counter(_get_one(value, 2) for value in _get(graph, 5))
     return {'sha256': digest(path), 'bytes': path.stat().st_size,
             'inputs': {name: {'dtype': dtype, 'shape': list(shape)} for name, (dtype, shape) in inputs.items()},
             'outputs': {name: {'dtype': dtype, 'shape': list(shape)} for name, (dtype, shape) in outputs.items()},
@@ -132,7 +142,11 @@ def _read_member(bundle, name):
     item = bundle.getinfo(name)
     if item.file_size > 10_000_000:
         raise ValueError('Audit metadata member exceeds 10 MB.')
-    return bundle.read(item)
+    with bundle.open(item) as stream:
+        data = stream.read(10_000_001)
+    if len(data) > 10_000_000:
+        raise ValueError('Audit metadata member exceeds 10 MB.')
+    return data
 
 
 def audit_archive(path: Path) -> dict:

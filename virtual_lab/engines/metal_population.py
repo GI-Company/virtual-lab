@@ -37,7 +37,7 @@ class MetalPopulationEngine:
         
         N = y0.shape[1]
         dt = policy.dt
-        steps = int((t_end - t_start) / dt)
+        steps = max(1, round((t_end - t_start) / dt))
         
         # Warmup / Cold-start timing
         # We do 1 step to compile/allocate the graph
@@ -55,8 +55,9 @@ class MetalPopulationEngine:
         progress_interval = max(1, steps // 10)
         
         for step in range(steps):
+            t = t_start + step * dt
             y = _rk4_step(self.model.rhs, t, y, dt, params, exposure)
-            t += dt
+            t = t_start + (step + 1) * dt
             
             # Periodically force evaluation to prevent the compute graph from growing infinitely
             if step > 0 and step % progress_interval == 0:

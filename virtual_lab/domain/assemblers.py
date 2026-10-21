@@ -85,10 +85,10 @@ def simulation_result_to_observation(
 
     from virtual_lab.domain.observation import NormalizedObservation, PhysicalDimension
     quantities = list(RHO_STATE_QUANTITIES)
-    if result.get('model_id', 'rho_p23h') != 'rho_p23h':
-        quantities = [QuantityDescriptor(semantic_name=s['semantic_name'] or result['model_id'] + ':' + s['key'],
-                      symbol=s['key'], description=s['label'], physical_dimension=PhysicalDimension(s.get('physical_dimension', 'DIMENSIONLESS')),
-                      units=s['units'], epistemic_state=EpistemicState.SIMULATED)
+    if result.get('model_id', 'rho_p23h') != 'rho_p23h' and 'state_metadata' in result:
+        quantities = [QuantityDescriptor(semantic_name=s.get('semantic_name') or result['model_id'] + ':' + s['key'],
+                      symbol=s['key'], description=s.get('label', s['key']), physical_dimension=PhysicalDimension(s.get('physical_dimension', 'DIMENSIONLESS')),
+                      units=s.get('units', ''), epistemic_state=EpistemicState.SIMULATED)
                       for s in result['state_metadata']]
     return NormalizedObservation(
         observation_id=str(uuid.uuid4()),

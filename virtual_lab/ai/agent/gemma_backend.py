@@ -142,13 +142,11 @@ class GemmaBackend:
         
         hview_image = None
         if context_data.get("hview_symbolic_summary"):
-            prompt += "HVIEW Image Representation Provided.\n"
-            prompt += "<image>\n"
-            prompt += f"Symbolic Sidecar:\n{context_data['hview_symbolic_summary']}\n\n"
-            
-            # The test runner injects actual projection dict into context_data
-            if "hview_projection_dict" in context_data:
+            if context_data.get("hview_projection_dict") is not None:
                 hview_image = self.render_hview_to_image(context_data["hview_projection_dict"])
+                prompt += "HVIEW Image Representation Provided.\n"
+                prompt += "<image>\n"
+            prompt += f"Symbolic Sidecar:\n{context_data['hview_symbolic_summary']}\n\n"
                 
         if context_data.get("authoritative_records"):
             prompt += f"Authoritative Records:\n{json.dumps(context_data['authoritative_records'], indent=2)}\n\n"

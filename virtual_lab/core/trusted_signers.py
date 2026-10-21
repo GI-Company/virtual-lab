@@ -6,6 +6,7 @@ Registry of trusted Ed25519 signers for .vlprogram and .vlab archives.
 
 from enum import Enum
 from dataclasses import dataclass
+import hashlib
 from typing import Optional, List
 
 class TrustState(Enum):
@@ -27,14 +28,18 @@ class TrustedSigner:
     permitted_roles: List[SignerRole]
     added_at: str
 
+def _fingerprint(public_key_hex: str) -> str:
+    return f"sha256:{hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()}"
+
+
 # In a real environment, this would be loaded from a secure keystore or config.
-# For the PoC, we hardcode known signers.
+# For the PoC, we register known demonstration signers.
 _REGISTRY = {
     # H-1 key for human approvals
     "a4d19f5a5e6a6d57433afd760e2efb5efa44427b7e1f2d642763210196589912": TrustedSigner(
         signer_id="H-1",
         public_key_hex="a4d19f5a5e6a6d57433afd760e2efb5efa44427b7e1f2d642763210196589912",
-        fingerprint="sha256:...",
+        fingerprint=_fingerprint("a4d19f5a5e6a6d57433afd760e2efb5efa44427b7e1f2d642763210196589912"),
         status=TrustState.TRUSTED,
         permitted_roles=[SignerRole.HUMAN_APPROVAL],
         added_at="2026-09-18T00:00:00Z"
@@ -43,7 +48,7 @@ _REGISTRY = {
     "414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935": TrustedSigner(
         signer_id="SYSTEM-PUBLISHER",
         public_key_hex="414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935",
-        fingerprint="sha256:...",
+        fingerprint=_fingerprint("414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935"),
         status=TrustState.TRUSTED,
         permitted_roles=[SignerRole.BUNDLE_PUBLISHER, SignerRole.PROGRAM_SIGNER],
         added_at="2026-09-18T00:00:00Z"

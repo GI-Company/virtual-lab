@@ -1,11 +1,13 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QTableWidget, QTableWidgetItem
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QTableWidget, QTableWidgetItem, QPushButton, QFrame
 from virtual_lab.domain.experiment_store import ExperimentStore
 from virtual_lab.gui.services.study_service import StudyService
 from virtual_lab.gui.services.research_outputs import compare_simulations
 
 
 class CompareWorkspace(QWidget):
+    navigateRequested = Signal(str)
+
     def __init__(self, workspace, parent=None):
         super().__init__(parent)
         self.workspace = workspace
@@ -17,7 +19,16 @@ class CompareWorkspace(QWidget):
         self.left.setAccessibleName('Simulation A')
         self.right.setAccessibleName('Simulation B')
         for label, selector in [('A', self.left), ('B', self.right)]:
-            selectors.addWidget(QLabel(label)); selectors.addWidget(selector)
+            selectors.addWidget(QLabel(label)); selectors.addWidget(selector, 1)
+        self.btn_numerical = QPushButton("Verify Numerical Certificate")
+        self.btn_numerical.clicked.connect(lambda: self.navigateRequested.emit("Numerical"))
+        self.btn_evidence = QPushButton("Review Evidence")
+        self.btn_evidence.clicked.connect(lambda: self.navigateRequested.emit("Evidence"))
+        self.btn_conclusion = QPushButton("Record Conclusion")
+        self.btn_conclusion.setObjectName("primary")
+        self.btn_conclusion.clicked.connect(lambda: self.navigateRequested.emit("Conclusion"))
+        for btn in (self.btn_numerical, self.btn_evidence, self.btn_conclusion):
+            selectors.addWidget(btn)
         layout.addLayout(selectors)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(['Quantity', 'Unit', 'A median [p05, p95]', 'B median [p05, p95]', 'B − A median'])

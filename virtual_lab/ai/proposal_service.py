@@ -26,7 +26,7 @@ class ProposalService:
         # Convert context to dict for Gemini
         context_dict = {
             "disease_model_id": context.disease_model_id,
-            "compound_id": context.compound_id,
+            "compound_id": context.compound_identity,
             "parameter_values": context.parameter_values,
         }
         
@@ -45,7 +45,7 @@ class ProposalService:
         envelope = GenerationEnvelope(
             proposal_id=proposal_id,
             provider="Gemini",
-            provider_model="gemini-3.6-pro",
+            provider_model="gemini-3.1-pro-preview",
             created_at=str(time.time()),
             prompt_hash=prompt_hash,
             scientific_context_hash=context_hash,
@@ -96,7 +96,7 @@ class ProposalService:
         ctx_view = ScientificContextView(
             disease=context.disease_model_id,
             selection="Full Context",
-            compound=context.compound_id,
+            compound=context.compound_identity,
             experiment="AI Proposed",
             context_hash=envelope.scientific_context_hash
         )

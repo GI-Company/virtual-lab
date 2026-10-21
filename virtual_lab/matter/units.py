@@ -27,21 +27,30 @@ CANONICAL_UNITS = {
 
 def to_canonical(value: float, unit: str) -> float:
     """Validate and convert an input unit to its canonical numerical value in the kernel."""
-    quantity = value * ureg(unit)
+    quantity = ureg.Quantity(value, unit)
     dimensionality = str(quantity.dimensionality)
     
     # Simple temperature conversion edge cases
     if dimensionality == '[temperature]':
-        return quantity.to(ureg.kelvin).magnitude
+        return float(quantity.to(ureg.kelvin).magnitude)
         
     for dim_str, canonical_unit in CANONICAL_UNITS.items():
         if dimensionality == dim_str:
-            return quantity.to(canonical_unit).magnitude
+            return float(quantity.to(canonical_unit).magnitude)
             
     # Fallback to base units
-    return quantity.to_base_units().magnitude
+    return float(quantity.to_base_units().magnitude)
+
+
+def to_canonical_uncertainty(uncertainty: float, unit: str) -> float:
+    """Convert an uncertainty (delta) to canonical internal SI units without adding affine offsets."""
+    q0 = to_canonical(0.0, unit)
+    q1 = to_canonical(1.0, unit)
+    scale = abs(q1 - q0)
+    return float(uncertainty * scale)
+
 
 def validate_dimensionality(unit: str, expected_dimensionality: str):
-    quantity = 1.0 * ureg(unit)
+    quantity = ureg.Quantity(1.0, unit)
     if str(quantity.dimensionality) != expected_dimensionality:
         raise ValueError(f"Expected dimensionality {expected_dimensionality}, got {quantity.dimensionality}")

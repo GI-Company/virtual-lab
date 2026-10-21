@@ -35,24 +35,17 @@ class Gemma4UnifiedLoader:
         raw_config = load_config(self.model_path)
         config = Gemma4UnifiedConfig.from_dict(raw_config)
         
-        # 2. Gather weight map (just keys for certification)
+        # 2. Gather weight map and load weights in a single pass
         weight_map = {}
-        for st_file in self.model_path.glob("*.safetensors"):
-            # Load lazily to get keys
-            # mx.load loads into memory, but we can just use the keys
-            weights = mx.load(str(st_file))
-            for k in weights.keys():
-                weight_map[k] = str(st_file)
-                
-        # 3. Generate Certificate
-        certificate = self.generate_certificate(config, weight_map)
-        
-        # 4. Load weights using MLX
-        # We need to gather all weights into one dict and apply them
         all_weights = {}
         for st_file in self.model_path.glob("*.safetensors"):
             w = mx.load(str(st_file))
+            for k in w.keys():
+                weight_map[k] = str(st_file)
             all_weights.update(w)
+
+        # 3. Generate Certificate
+        certificate = self.generate_certificate(config, weight_map)
 
         # 5. Initialize model
         model = Gemma4UnifiedModel(config)

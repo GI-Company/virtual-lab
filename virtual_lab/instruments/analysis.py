@@ -18,12 +18,12 @@ def jpeg_to_numpy(jpeg_bytes: bytes) -> np.ndarray:
     # Force RGB888 format to guarantee channel ordering
     img = img.convertToFormat(QImage.Format_RGB888)
     
+    height = img.height()
+    width = img.width()
+    bytes_per_line = img.bytesPerLine()
     ptr = img.constBits()
-    # Pyside6 returns memoryview or sip.voidptr. Let's make sure it handles both.
-    
-    # Calculate bytes per line to ensure no padding issues, though RGB888 is usually packed tightly.
-    # We'll reshape it to (height, width, 3)
-    arr = np.array(ptr, copy=True).reshape((img.height(), img.width(), 3))
+    raw = np.frombuffer(ptr, dtype=np.uint8, count=height * bytes_per_line)
+    arr = raw.reshape((height, bytes_per_line))[:, :width * 3].reshape((height, width, 3)).copy()
     return arr
 
 def calculate_pixel_statistics(arr: np.ndarray, mask: Optional[np.ndarray] = None) -> Dict[str, Any]:

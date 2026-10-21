@@ -11,6 +11,11 @@ class AgentGenesisRecorder:
         """
         self.ledger = ledger if ledger is not None else GenesisLedger(":memory:")
         self.actor = Actor(type="AI_AGENT", id="gemma4_unified")
+        self._event_counter = 0
+
+    def _next_seq(self) -> int:
+        self._event_counter += 1
+        return self._event_counter
         
     def _append(self, event_type: str, event_id: str, payload: Dict[str, Any]) -> str:
         return self.ledger.append(
@@ -35,13 +40,13 @@ class AgentGenesisRecorder:
         })
 
     def record_memory_retrieved(self, episode_id: str, retrieval_refs: list[str]) -> str:
-        return self._append("MEMORY_RETRIEVED", f"evt_mem_{episode_id}_{len(retrieval_refs)}", {
+        return self._append("MEMORY_RETRIEVED", f"evt_mem_{episode_id}_{len(retrieval_refs)}_{self._next_seq()}", {
             "episode_id": episode_id,
             "retrieval_refs": retrieval_refs
         })
 
     def record_evidence_retrieved(self, episode_id: str, evidence_refs: list[str]) -> str:
-        return self._append("EVIDENCE_RETRIEVED", f"evt_evid_{episode_id}", {
+        return self._append("EVIDENCE_RETRIEVED", f"evt_evid_{episode_id}_{self._next_seq()}", {
             "episode_id": episode_id,
             "evidence_refs": evidence_refs
         })

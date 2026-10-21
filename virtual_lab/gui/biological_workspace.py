@@ -75,6 +75,8 @@ class BiologicalWorkspace(QWidget):
         schedule=QHBoxLayout();self.duration=number(4,.01,168)
         self.target=InterventionChoice()
         self.event_time=number(2,0,168);self.multiplier=number(0,0,10)
+        self.duration.valueChanged.connect(lambda val: self.event_time.setMaximum(val))
+        self.event_time.setMaximum(self.duration.value())
         for label,widget in [('Duration (h)',self.duration),('Intervention',self.target),('Hours into interval',self.event_time),('Activity multiplier',self.multiplier)]:
             schedule.addWidget(QLabel(label));schedule.addWidget(widget)
         layout.addLayout(schedule)

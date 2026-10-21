@@ -202,12 +202,18 @@ class ExperimentStore:
         now = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
             """
-            INSERT OR REPLACE INTO experiments
+            INSERT INTO experiments
                 (id, disease_id, compound_id, evidence_snapshot,
                  parent_id, status, created_at, label, project_id, research_question)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET label=excluded.label,
-                status=excluded.status, project_id=excluded.project_id,
+            ON CONFLICT(id) DO UPDATE SET
+                disease_id=excluded.disease_id,
+                compound_id=excluded.compound_id,
+                evidence_snapshot=excluded.evidence_snapshot,
+                parent_id=excluded.parent_id,
+                label=excluded.label,
+                status=excluded.status,
+                project_id=excluded.project_id,
                 research_question=excluded.research_question
             """,
             (experiment_id, disease_id, compound_id, evidence_snapshot,
@@ -238,12 +244,16 @@ class ExperimentStore:
 
     def save_observation(self, obs: ExperimentObservation, *, commit=True):
         existing = self._conn.execute(
-            "SELECT epistemic_state, artifact_sha256 FROM observations WHERE observation_id = ?",
+            "SELECT epistemic_state, artifact_sha256, experiment_id FROM observations WHERE observation_id = ?",
             (obs.observation_id,)
         ).fetchone()
 
         if existing and existing["epistemic_state"] == EpistemicState.MEASURED.value:
-            if existing["artifact_sha256"] != obs.artifact_sha256:
+            if (
+                existing["artifact_sha256"] != obs.artifact_sha256
+                or obs.epistemic_state != EpistemicState.MEASURED
+                or existing["experiment_id"] != obs.experiment_id
+            ):
                 raise ValueError("Cannot mutate an existing MEASURED RawObservation")
                 
         parent_id = getattr(obs, "parent_observation_id", None)
@@ -400,7 +410,7 @@ class ExperimentStore:
             obs = RawObservation(**kwargs)
         else:
             obs = NormalizedObservation(epistemic_state=epistemic_state, **kwargs)
-        self.save_observation(obs)
+        self.save_observation(obs, commit=False)
         self._conn.execute(
             "DELETE FROM staging WHERE observation_id = ?", (observation_id,)
         )

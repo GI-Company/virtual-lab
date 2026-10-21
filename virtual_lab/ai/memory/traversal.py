@@ -15,7 +15,8 @@ class GraphTraversal:
         experiment_scope: str,
         max_hops: int = 3, 
         max_nodes: int = 50,
-        allowed_relation_types: Set[str] = None
+        allowed_relation_types: Set[str] = None,
+        allow_stale: bool = False
     ) -> Tuple[List[HyperVoxel], List[HyperEdge]]:
         """
         Traverses the graph outwards from the start nodes.
@@ -46,7 +47,12 @@ class GraphTraversal:
                 
             # Stale / Missing check
             state = self.resolver.resolve(voxel.authoritative_ref)
-            if state in (AuthoritativeResolutionState.MISSING, AuthoritativeResolutionState.HASH_MISMATCH, AuthoritativeResolutionState.STALE):
+            excluded_states = (
+                (AuthoritativeResolutionState.MISSING, AuthoritativeResolutionState.HASH_MISMATCH)
+                if allow_stale
+                else (AuthoritativeResolutionState.MISSING, AuthoritativeResolutionState.HASH_MISMATCH, AuthoritativeResolutionState.STALE)
+            )
+            if state in excluded_states:
                 # We skip adding this to valid results
                 visited_voxels.add(current_vid)
                 continue

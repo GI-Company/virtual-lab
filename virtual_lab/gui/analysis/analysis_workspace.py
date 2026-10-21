@@ -1,11 +1,13 @@
 import numpy as np
 from scipy.stats import spearmanr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QSplitter, 
-                               QListWidget, QLabel, QTableWidget, QTableWidgetItem)
-from PySide6.QtCore import Qt
+                               QListWidget, QLabel, QTableWidget, QTableWidgetItem, QPushButton, QFrame)
+from PySide6.QtCore import Qt, Signal
 import pyqtgraph as pg
 
 class AnalysisWorkspace(QWidget):
+    navigateRequested = Signal(str)
+
     def __init__(self, workspace, parent=None):
         super().__init__(parent)
         self.workspace = workspace
@@ -29,6 +31,15 @@ class AnalysisWorkspace(QWidget):
         # When an endpoint is clicked, update global selected_object
         self.list_endpoints.itemClicked.connect(self._on_endpoint_clicked)
         left_layout.addWidget(self.list_endpoints)
+        self.btn_numerical = QPushButton("Verify Numerical Certificate")
+        self.btn_numerical.clicked.connect(lambda: self.navigateRequested.emit("Numerical"))
+        self.btn_compare = QPushButton("Compare Results")
+        self.btn_compare.clicked.connect(lambda: self.navigateRequested.emit("Compare"))
+        self.btn_conclusion = QPushButton("Record Conclusion")
+        self.btn_conclusion.setObjectName("primary")
+        self.btn_conclusion.clicked.connect(lambda: self.navigateRequested.emit("Conclusion"))
+        for btn in (self.btn_numerical, self.btn_compare, self.btn_conclusion):
+            left_layout.addWidget(btn)
         
         # Right Panel
         right_panel = QWidget()
