@@ -158,11 +158,14 @@ class ProjectsWorkspace(QWidget):
         self.details = QPlainTextEdit(); self.details.setReadOnly(True)
         self.details.setPlaceholderText('Select a result to verify its files and inspect its protocol and output.')
         self._build_notebook()
+        from virtual_lab.gui.extensions_workspace import ExtensionFilesPanel
+        self.extension_files = ExtensionFilesPanel(self.service)
+        self.notebook.addTab(self.extension_files, "Model & instrument files")
         split.addWidget(self.notebook); split.setSizes([450, 750]); layout.addWidget(split, 1)
         csv_row = QHBoxLayout()
         self.csv_path = QLineEdit(); self.csv_path.setPlaceholderText('Absolute path for a new trajectory .csv file')
-        self.csv_export_button = QPushButton('Export selected simulation CSV')
-        self.csv_export_button.clicked.connect(lambda: self._action(self._export_csv, 'Verified simulation trajectories exported as CSV.'))
+        self.csv_export_button = QPushButton('Export selected result CSV')
+        self.csv_export_button.clicked.connect(lambda: self._action(self._export_csv, 'Verified result data exported as CSV.'))
         csv_row.addWidget(self.csv_path); csv_row.addWidget(self.csv_export_button); layout.addLayout(csv_row)
         package_row = QFormLayout()
         self.package_path = StudyPathEdit()
@@ -310,7 +313,7 @@ class ProjectsWorkspace(QWidget):
 
     def _export_csv(self):
         item = self.results.currentItem()
-        if item is None: raise ValueError('Select a saved simulation first.')
+        if item is None: raise ValueError('Select a saved result first.')
         self.service.export_result_csv(item.data(Qt.UserRole).observation_id, self.csv_path.text().strip())
 
     def _action(self, action, success="Saved. Select a result to inspect its verified artifacts."):
