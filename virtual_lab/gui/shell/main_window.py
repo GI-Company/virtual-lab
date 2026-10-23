@@ -233,6 +233,8 @@ class VirtualLabApplication(QMainWindow):
         self._refresh_status()
         self.workspace.activeExperimentChanged.connect(self._refresh_context)
         self._refresh_context()
+        from virtual_lab.edition import configure_window
+        configure_window(self)
 
     def _enable_ai(self):
         if self.local_research is not None:
@@ -307,9 +309,8 @@ class VirtualLabApplication(QMainWindow):
             self._place_ai_in_tab()
 
     def _tab_changed(self, *_):
-        if self.tabs.currentWidget() is self.instruments and not self.runtime.gateway.server.isListening():
-            if not self.runtime.gateway.start():
-                self.instruments.lbl_status.setText("Instrument listener could not start; port 8765 may be in use.")
+        # A tab change never opens a network listener.
+        pass
 
     def _navigate(self, name):
         if name == "Plan":

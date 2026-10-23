@@ -77,7 +77,7 @@ class VirtualExperiment:
             self.provenance.record("stage_completed", {"stage": stage})
 
         self.status = "completed"
-        self.provenance.record("run_completed", {"final_hash": self.provenance.generate_hash()})
+        self.provenance.record("run_completed", {"final_hash": self.provenance.generate_content_hash()})
         return self.results
 
     def branch(self, name: str, **kwargs) -> VirtualExperiment:

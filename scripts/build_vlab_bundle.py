@@ -9,6 +9,17 @@ def build_vlab_bundle(experiment_dir: str, output_path: str):
     """
     Packages an experiment workspace into an immutable .vlab cryptographic bundle.
     """
+    import nacl.signing
+    key_hex = os.environ.get('VLAB_PUBLISHER_SK')
+    if not key_hex:
+        raise ValueError('VLAB_PUBLISHER_SK must explicitly supply a private signing key.')
+    try:
+        signing_key = nacl.signing.SigningKey(bytes.fromhex(key_hex))
+    except (ValueError, TypeError):
+        raise ValueError('Publisher key must be a 32-byte Ed25519 seed in hex.') from None
+    from virtual_lab.core.trusted_signers import get_signer_status, TrustState
+    if get_signer_status(signing_key.verify_key.encode().hex())[0] == TrustState.REVOKED:
+        raise ValueError('The compromised demonstration publisher key is revoked.')
     if not os.path.exists(experiment_dir):
         raise ValueError(f"Experiment directory not found: {experiment_dir}")
         
@@ -16,55 +27,59 @@ def build_vlab_bundle(experiment_dir: str, output_path: str):
     if not os.path.exists(genesis_path):
         print("Warning: No genesis.db found in experiment directory.")
         
-    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as bundle:
-        manifest = {
-            "vlab_version": "1.0",
-            "build_utc": datetime.now(timezone.utc).isoformat(),
-            "contents": []
-        }
-        # Write genesis.db and its hash
-        if os.path.exists(genesis_path):
-            bundle.write(genesis_path, "genesis.db")
-            with open(genesis_path, 'rb') as f:
-                genesis_hash = hashlib.sha256(f.read()).hexdigest()
-            manifest["contents"].append({
-                "path": "genesis.db",
-                "sha256": genesis_hash
-            })
-            
-        for root, dirs, files in os.walk(experiment_dir):
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('build', '__pycache__')]
-            for file in files:
-                if file == "genesis.db" or file.startswith('.'):
-                    continue
-                file_path = os.path.join(root, file)
-                rel_path = os.path.relpath(file_path, experiment_dir)
-                
-                with open(file_path, 'rb') as f:
-                    file_hash = hashlib.sha256(f.read()).hexdigest()
-                    
-                manifest["contents"].append({
-                    "path": rel_path,
-                    "sha256": file_hash
-                })
-                bundle.write(file_path, rel_path)
-                
-        # Write manifest
-        from virtual_lab.core.canonical import canonical_json
-        import nacl.signing
-        import binascii
-        
-        # Use a real Ed25519 publisher key for the PoC
-        VLAB_PUBLISHER_SK = os.environ.get("VLAB_PUBLISHER_SK", "78295015b6748f63b2d0c9822e82842e650b1404649c0556dfefd6b84ed3abfc")
-        signing_key = nacl.signing.SigningKey(binascii.unhexlify(VLAB_PUBLISHER_SK))
-        
-        manifest_bytes = canonical_json(manifest)
-        bundle.writestr("manifest.json", manifest_bytes)
-        
-        # Create detached signature
-        signature = signing_key.sign(manifest_bytes).signature
-        bundle.writestr("manifest.sig", signature)
-        
+    # Snapshot SQLite through its backup API, including committed WAL records.
+    # Build outside the source tree and replace only after successful completion.
+    import sqlite3
+    import tempfile
+    from pathlib import Path
+    source = Path(experiment_dir).resolve()
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "vlab_version": "2.0", "canonicalization": "jcs-v1",
+        "publisher_public_key": signing_key.verify_key.encode().hex(),
+        "build_utc": datetime.now(timezone.utc).isoformat(), "contents": []}
+    with tempfile.TemporaryDirectory() as temporary:
+        temporary = Path(temporary)
+        package = temporary / 'bundle.zip'
+        with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as bundle:
+            for root, dirs, files in os.walk(source, followlinks=False):
+                dirs[:] = sorted(d for d in dirs if not d.startswith('.') and
+                    d not in ('build', '__pycache__') and not (Path(root)/d).is_symlink())
+                for name in sorted(files):
+                    path = Path(root) / name
+                    if path.resolve() == output or name.startswith('.') or name.endswith(('-wal', '-shm')):
+                        continue
+                    if path.is_symlink():
+                        raise ValueError('Symlinks cannot be bundled.')
+                    if path == Path(genesis_path).resolve():
+                        snapshot = temporary / 'genesis.db'
+                        original = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
+                        copy = sqlite3.connect(snapshot)
+                        try:
+                            original.backup(copy)
+                        finally:
+                            copy.close(); original.close()
+                        data = snapshot.read_bytes()
+                    else:
+                        data = path.read_bytes()
+                    relative = path.relative_to(source).as_posix()
+                    manifest['contents'].append({'path': relative, 'sha256': hashlib.sha256(data).hexdigest()})
+                    bundle.writestr(relative, data)
+            from virtual_lab.core.canonical import canonical_json
+            encoded = canonical_json(manifest)
+            bundle.writestr('manifest.json', encoded)
+            bundle.writestr('manifest.sig', signing_key.sign(encoded).signature)
+        # Stage on the destination filesystem for atomic replacement.
+        import shutil
+        handle, staged = tempfile.mkstemp(prefix='.vlab-bundle-', dir=output.parent)
+        try:
+            with os.fdopen(handle, 'wb') as stream, package.open('rb') as data:
+                shutil.copyfileobj(data, stream)
+                stream.flush(); os.fsync(stream.fileno())
+            os.replace(staged, output)
+        finally:
+            if os.path.exists(staged): os.unlink(staged)
     print(f"Successfully built .vlab bundle at {output_path}")
 
 if __name__ == "__main__":

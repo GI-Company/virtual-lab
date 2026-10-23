@@ -61,18 +61,18 @@ def run_simulation(config, progress=lambda _: None, cancelled=lambda: False):
         supplied = dict(ec50=cfg.ec50_um, rescue_max=cfg.rescue_max,
                         erad_multiplier=cfg.erad_multiplier, traffic_multiplier=cfg.traffic_multiplier)
     model_controls = spec.validated_parameters(supplied)
-    base = spec.prepare_parameters(model, model_controls)
     if list(model.state_schema()) != [state.key for state in spec.states]:
         raise ValueError('Model state schema does not match its registered metadata.')
     rng = np.random.default_rng(cfg.seed)
     # Positive lognormal ensemble represents assumed parameter uncertainty, not patients.
     draws = {k: v * rng.lognormal(-cfg.variation**2 / 2, cfg.variation, cfg.members)
-             for k, v in base.items()}
+             for k, v in model_controls.items()}
     xp = np
     if cfg.backend == "mlx":
         import mlx.core as xp
     dtype = xp.float64 if cfg.backend == "numpy" else xp.float32
-    params = {k: xp.array(v, dtype=dtype) for k, v in draws.items()}
+    prepared = spec.prepare_parameters(model, draws)
+    params = {k: xp.array(v, dtype=dtype) for k, v in prepared.items()}
     y0 = np.repeat(model.initial_state()[:, None], cfg.members, axis=1)
     if y0.shape != (len(spec.states), cfg.members):
         raise ValueError("Model initial state has the wrong shape.")
@@ -118,7 +118,7 @@ def run_simulation(config, progress=lambda _: None, cancelled=lambda: False):
     errors, scaled = [], []
     for member in range(min(cfg.members, 8)):
         if cancelled(): raise RunCancelled("Cancelled by user")
-        p = {k: v[member] for k,v in draws.items()}
+        p = spec.prepare_parameters(model, {k: v[member] for k,v in draws.items()})
         for exp, final in ((exposure,a),(vehicle,b)):
             ref = solve_ivp(lambda t,y: model.rhs(t,y,p,exp), (0,cfg.duration_h),
                             y0[:,member], method="DOP853", rtol=1e-10, atol=1e-12)
@@ -142,7 +142,8 @@ def run_simulation(config, progress=lambda _: None, cancelled=lambda: False):
               "config":saved_config, "state_names":model.state_schema(), "times_h":times.tolist(),
               "treated_quantiles":traces, "control_quantiles":control_traces,
               "final_state":a.T.tolist(), "control_final_state":b.T.tolist(),
-              "parameter_samples":{k:v.tolist() for k,v in draws.items()}, "source_hashes":hashes,
+              "parameter_samples":{k:v.tolist() for k,v in draws.items()},
+              "perturbation_scope": "Declared model controls only; derived internal rates follow their declared multipliers.", "source_hashes":hashes,
               "numerical_check":{"status":"PASSED" if max(scaled)<=1 else "FAILED",
                  "reference":"SciPy DOP853 float64", "checked_members":min(cfg.members,8),
                  "scope":"Final state of first up to 8 members, exposure and paired zero-exposure control; not biological validation",

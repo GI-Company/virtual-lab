@@ -116,18 +116,23 @@ def test_gui_model_selection_analysis_and_rho_views(qtbot):
     assert 'Spearman' in analysis.lbl_prcc_title.text()
 
 
-def test_installed_entrypoint_load_is_atomic(monkeypatch):
+def test_installed_entrypoint_requires_explicit_opt_in(monkeypatch):
     import virtual_lab.models.registry as registry
     from virtual_lab.models.builtin import GENE_EXPRESSION
     spec = replace(GENE_EXPRESSION, id='installed_gene')
+    called = []
     class Entry:
-        def load(self): return lambda: spec
+        name = 'installed-test'
+        def load(self):
+            called.append(True)
+            return lambda: spec
     monkeypatch.setattr(registry, '_MODELS', {})
     monkeypatch.setattr(registry, '_LOADED', False)
-    monkeypatch.setattr(registry, 'entry_points', lambda **kw: [Entry(), Entry()])
-    with pytest.raises(ValueError, match='Duplicate model'):
-        registry.models()
-    assert not registry._LOADED and not registry._MODELS
     monkeypatch.setattr(registry, 'entry_points', lambda **kw: [Entry()])
-    assert registry.get_model('installed_gene') == spec
-    assert len(registry.models()) == 3
+    assert len(registry.models()) == 2 and not called
+    assert registry.load_trusted_extension('installed-test') == spec
+    assert len(called) == 1 and len(registry.models()) == 3
+    monkeypatch.setattr(registry, 'entry_points', lambda **kw: [Entry(), Entry()])
+    with pytest.raises(ValueError, match='exactly one'):
+        registry.load_trusted_extension('installed-test')
+    assert len(called) == 1

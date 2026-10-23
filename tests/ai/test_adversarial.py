@@ -23,9 +23,9 @@ def test_epistemic_identity_wrapper():
     assert wrapped["identity"]["authoritative"] is False
     assert wrapped["payload"] == raw_output
     
-def test_cryptographic_execution_rejection():
+def test_cryptographic_execution_rejection(tmp_path):
     """Verify that an AI cannot execute an action without a valid Ed25519 signature."""
-    policy = ApprovalPolicy()
+    policy = ApprovalPolicy(GenesisLedger(str(tmp_path / "ledger.db")))
     
     proposal = Proposal(
         proposal_id="fake_id",

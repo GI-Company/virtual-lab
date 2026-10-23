@@ -1,43 +1,38 @@
-"""
-virtual_lab.core.canonical
-──────────────────────────
-Implements RFC 8785 (JCS) style Canonical JSON serialization.
-Used universally across VirtualLab to ensure predictable hashing for:
-- Proposals
-- Ed25519 signatures
-- Genesis payloads
-- Manifests
-"""
+"""Versioned canonical encodings. New signatures use RFC 8785 (JCS).
 
+Historical Python encodings are verification-only: never rehash persisted events
+or silently promote a legacy signature to the current signing scheme.
+"""
 import json
 from typing import Any
-
-def _normalize_numbers(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {k: _normalize_numbers(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_normalize_numbers(v) for v in value]
-    if isinstance(value, float) and value == 0.0:
-        return 0.0
-    return value
+import rfc8785
 
 
 def canonical_json(data: Any) -> bytes:
-    """
-    Returns RFC 8785 / JCS style canonical JSON representation as UTF-8 bytes.
-    Ensures that identical objects hash to the exact same bytes regardless of 
-    language or environment runtime dictionaries.
-    """
-    # separators=(',', ':') removes whitespace
-    # sort_keys=True enforces alphabetical key ordering
-    # ensure_ascii=False allows literal UTF-8
-    # allow_nan=False rejects non-standard JSON floats (NaN, Infinity)
-    normalized = _normalize_numbers(data)
-    serialized = json.dumps(
-        normalized, 
-        separators=(',', ':'), 
-        sort_keys=True, 
-        ensure_ascii=False, 
-        allow_nan=False
-    )
-    return serialized.encode('utf-8')
+    return rfc8785.dumps(data)
+
+
+def legacy_canonical_json(data: Any, *, normalize_zero: bool = True) -> bytes:
+    def normalize(value):
+        if isinstance(value, dict):
+            return {k: normalize(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [normalize(v) for v in value]
+        if normalize_zero and isinstance(value, float) and value == 0.0:
+            return 0.0
+        return value
+    return json.dumps(normalize(data), separators=(',', ':'), sort_keys=True,
+                      ensure_ascii=False, allow_nan=False).encode('utf-8')
+
+
+def strict_json_loads(raw):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('Duplicate JSON key: ' + key)
+            result[key] = value
+        return result
+    def invalid(value):
+        raise ValueError('Nonfinite JSON value: ' + value)
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid)

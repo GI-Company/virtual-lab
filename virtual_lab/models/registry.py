@@ -91,9 +91,6 @@ def models():
         try:
             register_model(RHO)
             register_model(GENE_EXPRESSION)
-            for entry in entry_points(group='virtual_lab.models'):
-                factory = entry.load()
-                register_model(factory() if callable(factory) else factory)
         except Exception:
             _MODELS.clear()
             _MODELS.update(previous)
@@ -107,3 +104,15 @@ def get_model(model_id):
     if model_id not in _MODELS:
         raise ValueError(f'Unknown model: {model_id}')
     return _MODELS[model_id]
+
+
+def load_trusted_extension(name):
+    """Explicit operator opt-in. Installed Python plugins run with user privileges."""
+    models()
+    entries = [e for e in entry_points(group='virtual_lab.models') if e.name == name]
+    if len(entries) != 1:
+        raise ValueError('Choose exactly one installed extension by name.')
+    factory = entries[0].load()
+    spec = factory() if callable(factory) else factory
+    register_model(spec)
+    return spec

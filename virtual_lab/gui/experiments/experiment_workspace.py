@@ -15,6 +15,12 @@ class ExperimentWorkspace(QWidget):
         self.model_selector=QComboBox()
         for spec in models(): self.model_selector.addItem(spec.label, spec.id)
         model_row=QFormLayout();model_row.addRow("Simulation model",self.model_selector);layout.addLayout(model_row)
+        self.model_import_path=QLineEdit()
+        self.model_import_path.setPlaceholderText('Absolute path to a vlab-ode-v1 JSON manifest')
+        self.model_import_button=QPushButton('Import equation model JSON')
+        self.model_import_button.clicked.connect(self._import_model)
+        import_row=QHBoxLayout();import_row.addWidget(self.model_import_path);import_row.addWidget(self.model_import_button)
+        layout.addLayout(import_row)
         self.note=QLabel();self.note.setWordWrap(True);layout.addWidget(self.note)
         self.config_group=QGroupBox("Experiment design");self.config_group.setObjectName("experimentDesign")
         form=QFormLayout(self.config_group)
@@ -73,6 +79,17 @@ class ExperimentWorkspace(QWidget):
         self.controller.runCancelled.connect(lambda:self._stop("Cancelled. No result was saved."))
         layout.addStretch()
         self._refresh_next_steps()
+    def _import_model(self):
+        try:
+            from virtual_lab.extensions.models import import_ode
+            from virtual_lab.core.paths import app_data_dir
+            spec=import_ode(self.model_import_path.text().strip(), app_data_dir() / 'model-snapshots')
+            self.model_selector.addItem(spec.label, spec.id)
+            self.model_selector.setCurrentIndex(self.model_selector.findData(spec.id))
+            self.status.setText('Imported data-only model. Review its assumptions and units before running.')
+        except Exception as error:
+            self.status.setText('Model import failed: ' + str(error))
+
     def _model_changed(self, *_):
         from virtual_lab.models.registry import get_model
         spec=get_model(self.model_selector.currentData())
@@ -107,6 +124,10 @@ class ExperimentWorkspace(QWidget):
     def _busy(self,busy):
         self.model_selector.setEnabled(not busy);self.model_group.setEnabled(not busy)
         self.btn_run.setEnabled(not busy);self.config_group.setEnabled(not busy);self.btn_cancel.setEnabled(busy)
+        from virtual_lab.edition import current_edition
+        if current_edition() == 'high-school':
+            self.model_selector.setEnabled(False);self.model_group.setEnabled(False)
+        self.model_import_button.setEnabled(not busy and current_edition() != 'high-school')
         if busy:self.progress.setValue(0);self.status.setText("Integrating treatment and paired vehicle…")
     def _stop(self,message):self._busy(False);self.status.setText(message)
     def _finished(self,result):

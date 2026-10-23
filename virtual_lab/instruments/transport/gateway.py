@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import time
 import logging
 from datetime import datetime, timezone
@@ -41,6 +43,8 @@ class InstrumentGateway(QObject):
     def __init__(self, ledger: GenesisLedger, port=8765, parent=None):
         super().__init__(parent)
         self.port = port
+        self._paired_devices = {}
+        self._authenticated_connections = set()
         self.ledger = ledger
         self.registration_service = ArtifactRegistrationService(self.ledger)
         self.server = QWebSocketServer("VirtualLab Instrument Gateway", QWebSocketServer.NonSecureMode, self)
@@ -60,9 +64,19 @@ class InstrumentGateway(QObject):
         self.camera_binary_messages_received = 0
         self.camera_bytes_received = 0
 
+    def pair_device(self, device_id: str, token: str):
+        """Operator-provisioned session pairing; tokens are never logged or persisted."""
+        if not isinstance(device_id, str) or not 1 <= len(device_id) <= 100 or not isinstance(token, str) or not 32 <= len(token) <= 256:
+            raise ValueError('Supply a device identity and a session token of at least 32 characters.')
+        for connection in list(self.registry.connections.values()):
+            if connection.bound_device_id == device_id:
+                self._authenticated_connections.discard(connection.connection_id)
+                if connection.socket: connection.socket.close()
+        self._paired_devices[device_id] = hashlib.sha256(token.encode()).digest()
+
     def start(self) -> bool:
         from PySide6.QtNetwork import QHostAddress
-        if self.server.listen(QHostAddress.Any, self.port):
+        if self.server.listen(QHostAddress.LocalHost, self.port):
             logger.info("[GATEWAY] Started on port %d", self.port)
             return True
         else:
@@ -121,7 +135,8 @@ class InstrumentGateway(QObject):
 
     def _handle_late_binding(self, path: str, conn_id: str, device_id: str):
         conn = self.registry.get_connection(conn_id)
-        if not conn: return
+        if not conn or conn_id not in self._authenticated_connections:
+            raise ValueError('Device channel is not authenticated.')
         
         c_type = path.strip("/").upper()
         if conn.bound_device_id is None:
@@ -154,9 +169,18 @@ class InstrumentGateway(QObject):
                 dev_id = data.get("device_id")
                 hello_channel = data.get("channel")
                 expected_channel = path.strip("/")
-                if hello_channel and hello_channel != expected_channel:
+                if hello_channel != expected_channel:
                     logger.error("[%s] protocol mismatch: hello channel '%s' does not match path '%s'", conn_id, hello_channel, path)
                     return True
+                token = data.get('pairing_token')
+                expected = self._paired_devices.get(dev_id)
+                if (not expected or not isinstance(token, str) or len(token) > 256 or
+                    not hmac.compare_digest(expected, hashlib.sha256(token.encode()).digest())):
+                    conn = self.registry.get_connection(conn_id)
+                    if conn and conn.socket: conn.socket.close()
+                    self.gatewayError.emit('Instrument pairing failed.')
+                    return True
+                self._authenticated_connections.add(conn_id)
                 if dev_id and dev_id != "UNKNOWN":
                     self._handle_late_binding(path, conn_id, dev_id)
                 return True
@@ -173,12 +197,19 @@ class InstrumentGateway(QObject):
                 logger.error("[%s][%s] protocol mismatch: text message on non-sensors channel", conn_id, conn.channel_type.upper())
                 return
             
+        if not isinstance(raw, str) or len(raw.encode('utf-8')) > 1024*1024:
+            self.gatewayError.emit('Instrument message exceeds size limit.')
+            return
         msg_type = self._peek_message_type(raw)
         
         if msg_type == "CHANNEL_HELLO":
             self._try_parse_hello("/sensors", conn_id, raw)
             return
             
+        if not conn or conn_id not in self._authenticated_connections or not conn.bound_device_id:
+            self.gatewayError.emit('Unauthenticated sensor message rejected.')
+            if socket: socket.close()
+            return
         if msg_type != "MEASUREMENT_PACKET":
             logger.error("[%s][SENSORS] Protocol error: Unexpected message_type %s on /sensors", conn_id, msg_type)
             return
@@ -186,7 +217,7 @@ class InstrumentGateway(QObject):
         try:
             measurement = self.decoder.decode(raw, self.active_session_id)
             if not measurement.instrument_id or measurement.instrument_id == "UNKNOWN":
-                logger.warning("[%s][SENSORS] DEVICE_ID MISSING - CHANNEL UNBOUND", conn_id)
+                raise ValueError("Sensor device identity is required.")
             else:
                 self._handle_late_binding("/sensors", conn_id, measurement.instrument_id)
                 if conn and conn.state != SensorChannelState.STREAMING:
@@ -208,6 +239,9 @@ class InstrumentGateway(QObject):
             conn.last_activity_utc = int(time.time()*1000)
             conn.message_count += 1
             
+        if not isinstance(raw, str) or len(raw.encode('utf-8')) > 1024*1024:
+            self.gatewayError.emit('Instrument message exceeds size limit.')
+            return
         msg_type = self._peek_message_type(raw)
         if msg_type == "CHANNEL_HELLO":
             self._try_parse_hello("/camera", conn_id, raw)
@@ -227,6 +261,13 @@ class InstrumentGateway(QObject):
                 logger.error("[%s][%s] protocol mismatch: binary frame on non-camera channel", conn_id, conn.channel_type.upper())
                 return
                 
+        if not conn or conn_id not in self._authenticated_connections or not conn.bound_device_id:
+            self.gatewayError.emit('Unauthenticated camera message rejected.')
+            if socket: socket.close()
+            return
+        if len(raw_bytes) > 16*1024*1024:
+            self.gatewayError.emit('Camera frame exceeds size limit.')
+            return
         self.camera_binary_messages_received += 1
         self.camera_bytes_received += len(raw_bytes)
         
@@ -255,11 +296,27 @@ class InstrumentGateway(QObject):
                 logger.error("[%s][%s] protocol mismatch: text message on non-control channel", conn_id, conn.channel_type.upper())
                 return
             
+        if not isinstance(raw, str) or len(raw.encode('utf-8')) > 1024*1024:
+            self.gatewayError.emit('Instrument message exceeds size limit.')
+            return
         msg_type = self._peek_message_type(raw)
         if msg_type == "CHANNEL_HELLO":
             self._try_parse_hello("/control", conn_id, raw)
             return
             
+        if not conn or conn_id not in self._authenticated_connections or not conn.bound_device_id:
+            self.gatewayError.emit('Unauthenticated control message rejected.')
+            if socket: socket.close()
+            return
+        try:
+            claimed_device = json.loads(raw).get('device_id')
+        except (ValueError, AttributeError):
+            self.gatewayError.emit('Invalid control message.')
+            return
+        if claimed_device != conn.bound_device_id:
+            self.gatewayError.emit('Control device identity mismatch.')
+            if socket: socket.close()
+            return
         acquisition_messages = (
             "MEASUREMENT_STATUS", "MEASUREMENT_COMPLETED", "MEASUREMENT_FAILED",
             "MEASUREMENT_REJECTED", "MEASUREMENT_CANCELLED",
@@ -300,12 +357,17 @@ class InstrumentGateway(QObject):
         elif result["type"] == "ARTIFACT_REGISTER":
             # Handle directly in the gateway and emit signal
             registration = result["registration"]
-            dev_id = (conn.bound_device_id if conn and conn.bound_device_id else None) or registration.device_id
+            if registration.device_id != conn.bound_device_id:
+                self.gatewayError.emit('Artifact device identity mismatch.')
+                socket.close()
+                return
+            dev_id = conn.bound_device_id
             response_json = self.registration_service.handle_registration(registration, dev_id)
             socket.sendTextMessage(response_json)
             self.artifactRegistrationReceived.emit(registration)
 
     def _on_disconnect(self, socket, path, conn_id):
+        self._authenticated_connections.discard(conn_id)
         import shiboken6
         
         c_type = path.strip("/").upper()
@@ -359,16 +421,18 @@ class InstrumentGateway(QObject):
                     self.instrumentDisconnected.emit(dev_id)
 
     def send_control_message(self, msg: dict, device_id: str = None):
-        if not device_id:
-            if not self.control_clients:
-                self.gatewayError.emit("CONTROL CHANNEL DISCONNECTED")
-                return
-            raw = json.dumps(msg)
-            for client in self.control_clients:
-                client.sendTextMessage(raw)
-        else:
-            dev = self.registry.devices.get(device_id)
-            if dev and dev.control and dev.control.socket:
-                dev.control.socket.sendTextMessage(json.dumps(msg))
-            else:
-                self.gatewayError.emit(f"CONTROL CHANNEL DISCONNECTED FOR {device_id}")
+        target = device_id or msg.get('device_id')
+        if not target:
+            self.gatewayError.emit('Choose a paired target device; control broadcasting is disabled.')
+            return False
+        dev = self.registry.devices.get(target)
+        connection = dev.control if dev else None
+        if (not connection or not connection.socket or
+            connection.connection_id not in self._authenticated_connections):
+            self.gatewayError.emit('Authenticated control channel is not connected.')
+            return False
+        if msg.get('device_id', target) != target:
+            self.gatewayError.emit('Control target identity mismatch.')
+            return False
+        connection.socket.sendTextMessage(json.dumps(dict(msg, device_id=target), allow_nan=False))
+        return True

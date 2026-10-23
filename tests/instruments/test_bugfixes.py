@@ -54,6 +54,10 @@ def test_sensor_measurement_binds_and_streams():
         gw._on_new_connection()
         conn_id = list(gw.registry.connections.keys())[0]
         
+        gw.pair_device('ANDROID-test', 'x' * 32)
+        gw._try_parse_hello('/sensors', conn_id, json.dumps({
+            'message_type': 'CHANNEL_HELLO', 'channel': 'sensors',
+            'device_id': 'ANDROID-test', 'pairing_token': 'x' * 32}))
         raw_measurement = json.dumps({
             "schema_version": "1",
             "message_type": "MEASUREMENT_PACKET",
@@ -86,7 +90,9 @@ def test_channel_hello_binds_idle_camera():
         gw._on_new_connection()
         conn_id = list(gw.registry.connections.keys())[0]
         
+        gw.pair_device('ANDROID-c0f8e767', 'y' * 32)
         hello = json.dumps({
+            'pairing_token': 'y' * 32,
             "schema_version": "1",
             "message_type": "CHANNEL_HELLO",
             "device_id": "ANDROID-c0f8e767",
@@ -106,7 +112,9 @@ def test_hello_channel_must_match_url_path():
         gw._on_new_connection()
         conn_id = list(gw.registry.connections.keys())[0]
         
+        gw.pair_device('ANDROID-c0f8e767', 'y' * 32)
         hello = json.dumps({
+            'pairing_token': 'y' * 32,
             "schema_version": "1",
             "message_type": "CHANNEL_HELLO",
             "device_id": "ANDROID-c0f8e767",
@@ -126,6 +134,10 @@ def test_info_logging_occurs_on_transition(caplog):
         gw._on_new_connection()
         conn_id = list(gw.registry.connections.keys())[0]
         
+        gw.pair_device('ANDROID-test', 'x' * 32)
+        gw._try_parse_hello('/sensors', conn_id, json.dumps({
+            'message_type': 'CHANNEL_HELLO', 'channel': 'sensors',
+            'device_id': 'ANDROID-test', 'pairing_token': 'x' * 32}))
         raw_measurement = json.dumps({
             "schema_version": "1",
             "message_type": "MEASUREMENT_PACKET",

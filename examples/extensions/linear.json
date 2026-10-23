@@ -1,0 +1,28 @@
+{
+  "format": "vlab-linear-v1",
+  "id": "linear_demo",
+  "version": "1",
+  "inputs": [
+    "concentration"
+  ],
+  "input_units": [
+    "µM"
+  ],
+  "outputs": [
+    "response"
+  ],
+  "output_units": [
+    "dimensionless"
+  ],
+  "coefficients": [
+    [
+      2
+    ]
+  ],
+  "intercept": [
+    1
+  ],
+  "limitations": [
+    "Illustrative coefficients; not a validated predictor."
+  ]
+}

@@ -27,8 +27,13 @@ class ProvenanceTracker:
         self.history.append(ProvenanceRecord(action, details))
 
     def generate_hash(self) -> str:
-        data = [{"action": r.action, "details": r.details} for r in self.history]
+        data = self.serialize()
         return hashlib.sha256(canonical_json(data)).hexdigest()
+
+    def generate_content_hash(self) -> str:
+        """Reproducibility fingerprint; deliberately excludes acquisition time."""
+        return hashlib.sha256(canonical_json([
+            {"action": r.action, "details": r.details} for r in self.history])).hexdigest()
 
     def serialize(self) -> List[Dict[str, Any]]:
         return [r.to_dict() for r in self.history]

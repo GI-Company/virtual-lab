@@ -1,6 +1,6 @@
 # Student editions: three profiles, one scientific engine
 
-Design proposal, October 20, 2026. These profiles are not implemented by this document. The current desktop usability fixes can ship independently. The existing onboarding draft needs further review before classroom use.
+Design proposal, October 20, 2026. Initial presentation profiles are now implemented in the security beta; see [beta testing](beta-testing.md) for the exact current scope. The curriculum, managed classroom features and reviewed onboarding proposed below remain future work.
 
 Use one application with a visible learning-profile selector and a shared `.vlab-study` format. Avoid three forks of the scientific models. Students can change profiles without converting or rewriting their saved research. A teacher can prepare a versioned assignment; the student owns a separate study workspace.
 

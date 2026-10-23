@@ -1,0 +1,29 @@
+{
+  "format": "vlab-ode-v1",
+  "id": "imported_decay",
+  "label": "User decay equation",
+  "version": "1",
+  "description": "Exponential decay teaching example.",
+  "parameters": [
+    {
+      "key": "decay",
+      "label": "Decay rate",
+      "default": 0.2,
+      "minimum": 0.01,
+      "maximum": 1,
+      "units": "1/h"
+    }
+  ],
+  "states": [
+    {
+      "key": "quantity",
+      "label": "Quantity",
+      "initial": 1,
+      "units": "normalized units",
+      "derivative": "-decay * quantity"
+    }
+  ],
+  "limitations": [
+    "Assumed first-order kinetics; no biological validation."
+  ]
+}

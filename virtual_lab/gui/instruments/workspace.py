@@ -1,6 +1,6 @@
 from virtual_lab.core.paths import app_data_dir
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QPushButton, QGroupBox, QSplitter, QFrame, QComboBox, QStackedWidget, QTabWidget, QScrollArea)
+                               QPushButton, QLineEdit, QGroupBox, QSplitter, QFrame, QComboBox, QStackedWidget, QTabWidget, QScrollArea)
 from PySide6.QtCore import Qt, QTimer
 import pyqtgraph as pg
 import math
@@ -246,7 +246,18 @@ class InstrumentsWorkspace(QWidget):
         self.lbl_gateway_info.setStyleSheet("font-family: monospace; color: #94a3b8;")
         conn_layout.addWidget(self.lbl_gateway_info)
         
-        self.btn_gateway = QPushButton("Enable LAN Discovery")
+        self.pair_device_id = QLineEdit()
+        self.pair_device_id.setPlaceholderText('Operator-approved device ID')
+        self.pair_token = QLineEdit()
+        self.pair_token.setEchoMode(QLineEdit.Password)
+        self.pair_token.setPlaceholderText('Session token: at least 32 characters')
+        conn_layout.addWidget(self.pair_device_id)
+        conn_layout.addWidget(self.pair_token)
+        self.btn_pair = QPushButton('Pair device for this session')
+        self.btn_pair.clicked.connect(self._pair_device)
+        self.pair_token.setMaxLength(256)
+        conn_layout.addWidget(self.btn_pair)
+        self.btn_gateway = QPushButton("Start local receiver")
         self.btn_gateway.clicked.connect(self._toggle_gateway)
         conn_layout.addWidget(self.btn_gateway)
         
@@ -505,16 +516,22 @@ class InstrumentsWorkspace(QWidget):
         except Exception:
             pass
 
+    def _pair_device(self):
+        try:
+            self.gateway.pair_device(self.pair_device_id.text().strip(), self.pair_token.text())
+            self.pair_token.clear()
+            self.lbl_status.setText('Device paired for this process. Configure its CHANNEL_HELLO pairing_token securely.')
+        except ValueError as error:
+            self.lbl_status.setText(str(error))
+
     def _toggle_gateway(self):
-        if self.discovery.status() in (DiscoveryStatus.STOPPED, DiscoveryStatus.FAILED):
-            self.discovery.start()
-            self.btn_gateway.setText(
-                "Disable LAN Discovery" if self.discovery.status() == DiscoveryStatus.ADVERTISING
-                else "Enable LAN Discovery"
-            )
+        if self.gateway.server.isListening():
+            self.gateway.stop()
+            self.btn_gateway.setText('Start local receiver')
+        elif self.gateway.start():
+            self.btn_gateway.setText('Stop local receiver')
         else:
-            self.discovery.stop()
-            self.btn_gateway.setText("Enable LAN Discovery")
+            self.lbl_status.setText('Local receiver could not start; port 8765 may be in use.')
         self._update_diagnostics_ui()
 
     def _update_diagnostics_ui(self):
@@ -526,7 +543,7 @@ class InstrumentsWorkspace(QWidget):
         info = (
             f"INSTRUMENT GATEWAY\n\n"
             f"WebSocket\n● {'LISTENING' if self.gateway.server.isListening() else 'OFFLINE'}\n\n"
-            f"Bind\n0.0.0.0:8765\n\n"
+            f"Bind\n127.0.0.1:8765\n\n"
             f"Channels\n/sensors  /control  /camera\n\n"
             f"Discovery\n● {d_status.value}\n\n"
             f"Service\n{svc_name}\n\n"

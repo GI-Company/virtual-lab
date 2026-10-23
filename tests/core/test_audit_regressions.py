@@ -157,7 +157,7 @@ def test_c7_approval_policy_iso_timestamp_and_replay_protection(tmp_path):
             Actor(type="AI", id="agent-1"),
             "AI_PROPOSAL",
             {
-                "proposal_id": "prop-1",
+                **__import__("dataclasses").asdict(proposal),
                 "action_type": "RUN_SIMULATION",
                 "target": "exp-1",
                 "parameters": {"dt": 0.1},

@@ -18,6 +18,7 @@ def package_vlprogram(source_dir, output_dir):
         
     manifest = {
         "format": "vlprogram_1.0",
+        "canonicalization": "jcs-v1",
         "program_id": "rho_p23h",
         "state_schema": ["R_f", "R_ER", "R_s", "S", "V"],
         "initial_state": {

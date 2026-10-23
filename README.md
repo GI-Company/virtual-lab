@@ -1,3 +1,7 @@
+# Security beta editions
+
+See [beta testing](docs/beta-testing.md) for separate researcher/high-school/undergraduate/graduate branches, isolated storage and release gates. See [extension adapters](docs/extensions.md) for instrumentation and all three model roles. These are beta candidates with limited supported adapters.
+
 # VirtualLab: Epistemic Research Cockpit
 
 VirtualLab connects mechanistic simulations, physical instruments, AlphaGenome predictions, individual AlphaFold DB lookups, and Vertex AI research within one evidence and provenance model. AlphaFold access is on demand; no database mirror or local inference installation is required.

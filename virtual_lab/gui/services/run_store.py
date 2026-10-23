@@ -9,11 +9,7 @@ class RunStore:
         self.root = Path(root) if root is not None else app_data_dir()
 
     def _ledger_path(self) -> Path:
-        legacy = self.root / "ledger.db"
-        unified = self.root / "genesis.db"
-        if legacy.exists() and not unified.exists():
-            return legacy
-        return unified
+        return self.root / "genesis.db"
 
     def save(self, result):
         self.root.mkdir(parents=True, exist_ok=True)
@@ -36,26 +32,27 @@ class RunStore:
         return str(target)
 
     def events(self):
-        events_by_id = {}
-        for name in ("ledger.db", "genesis.db"):
-            db_file = self.root / name
-            if not db_file.exists():
+        from virtual_lab.core.ledger import read_ledger_events
+        events = []
+        for name in ('ledger.db', 'genesis.db'):
+            path = self.root / name
+            if not path.exists():
                 continue
-            ledger = GenesisLedger(str(db_file))
-            try:
-                for row in ledger.conn.execute("SELECT * FROM ledger_events ORDER BY sequence"):
-                    ev = ledger._row_to_event(row).model_dump()
-                    events_by_id[ev["event_id"]] = ev
-            finally:
-                ledger.conn.close()
-        return list(events_by_id.values())
+            history = read_ledger_events(path)
+            ledger_id = history[0].event_hash if history else name
+            for event in history:
+                value = event.model_dump()
+                value.update(source_ledger=name, ledger_id=ledger_id,
+                             event_key=name + ':' + ledger_id + ':' + event.event_id)
+                events.append(value)
+        return events
 
     def load_all(self):
         runs=[]
         for event in self.events():
             if event["event_type"] not in ("SIMULATION_SAVED", "DESIGN_SAVED"): continue
             p=event["payload"]
-            if p["file"] != p["sha256"]+".json" or len(p["sha256"]) != 64:
+            if p["file"] != p["sha256"]+".json" or len(p["sha256"]) != 64 or any(c not in "0123456789abcdef" for c in p["sha256"]):
                 raise ValueError("Invalid artifact reference")
             data=(self.root/p["file"]).read_bytes()
             if hashlib.sha256(data).hexdigest() != p["sha256"]:

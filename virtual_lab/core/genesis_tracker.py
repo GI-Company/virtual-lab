@@ -42,6 +42,13 @@ class GenesisTracker:
         
         return proposal_id
 
+    def record_executable_proposal(self, proposal: Proposal) -> str:
+        """Record the entire signed envelope; older descriptive proposals are not executable."""
+        from dataclasses import asdict
+        self.ledger.append('PROPOSAL_' + uuid.uuid4().hex,
+            Actor(type='AI', id=proposal.actor_id), 'AI_PROPOSAL', asdict(proposal))
+        return proposal.proposal_id
+
     def record_rule_evaluation(self, proposal_id: str, criteria: str, evidence_refs: list, result: str) -> str:
         """
         Records the deterministic evaluation of a proposal against advancement/quality rules.
@@ -50,7 +57,8 @@ class GenesisTracker:
             "proposal_id": proposal_id,
             "criteria": criteria,
             "evidence_references": evidence_refs,
-            "result": result
+            "result": result,
+            "passed": result == "PASS"
         }
         
         actor = Actor(type="SYSTEM", id="rule_engine")

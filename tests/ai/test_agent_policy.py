@@ -100,14 +100,13 @@ class TestStageD(unittest.TestCase):
         self.assertFalse(episode.pending_actions)
         
         # Manually Approve and Execute
-        decision = self.policy.human_approve_proposal(episode.episode_id, "prop_fake123", "hanna")
-        self.assertEqual(decision.decision, ProposalDecisionStatus.APPROVED)
-        
-        result = self.policy.execute_approved_action(episode.episode_id, "prop_fake123", "run_simulation", {"proposal_id": "prop_fake123"})
-        self.assertEqual(result["result"], "Success")
-        
-        # Verify Genesis chain
-        self.ledger.verify_chain() # Should not raise
+        head_before = self.ledger.get_head().event_hash
+        with self.assertRaises(LocalResearchPolicyException):
+            self.policy.human_approve_proposal(episode.episode_id, 'prop_fake123', 'hanna')
+        with self.assertRaises(LocalResearchPolicyException):
+            self.policy.execute_approved_action(episode.episode_id, 'prop_fake123', 'run_simulation', {})
+        self.assertEqual(self.ledger.get_head().event_hash, head_before)
+        self.ledger.verify_chain()
 
     def test_04_failure_local_mode(self):
         script = [

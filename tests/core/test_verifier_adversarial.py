@@ -34,8 +34,8 @@ def test_tampered_genesis_hash_rejected(tmp_path):
             event_type TEXT, payload_json TEXT, parent_hash TEXT,
             event_hash TEXT)""")
         conn.execute("INSERT INTO ledger_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                     ("1.0", 1, "EVT-1", "2026-09-18T00:00:00Z", "HUMAN",
-                      "H-1", "PROPOSAL_CREATED", '{"target":"test"}', "0" * 64,
+                     ("1.0", 0, "GENESIS", "2026-09-18T00:00:00Z", "HUMAN",
+                      "H-1", "LEDGER_INITIALIZED", '{"target":"test"}', "0" * 64,
                       "tampered"))
     try:
         verify_genesis_chain(str(db))

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import os
 import uuid
-from virtual_lab.core.canonical import canonical_json
+from virtual_lab.core.canonical import canonical_json, legacy_canonical_json, strict_json_loads
 
 class Actor(BaseModel):
     type: str
@@ -16,7 +16,7 @@ class Actor(BaseModel):
     model: Optional[str] = None
 
 class LedgerEvent(BaseModel):
-    schema_version: str = "1.0"
+    schema_version: str = "2.0"
     sequence: int
     event_id: str
     timestamp_utc: str
@@ -29,8 +29,24 @@ class LedgerEvent(BaseModel):
 def compute_event_hash(event: LedgerEvent) -> str:
     # Hash everything except the event_hash itself
     envelope = event.model_dump(exclude={"event_hash"})
-    canonical_bytes = canonical_json(envelope)
-    return hashlib.sha256(canonical_bytes).hexdigest()
+    if event.schema_version == '2.0':
+        encoded = canonical_json(envelope)
+    elif event.schema_version == '1.0':
+        encoded = legacy_canonical_json(envelope)
+    else:
+        raise ChainIntegrityError('Unsupported ledger schema: ' + event.schema_version)
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def event_hash_matches(event):
+    if event.schema_version == '2.0':
+        return event.event_hash == compute_event_hash(event)
+    if event.schema_version == '1.0':
+        envelope = event.model_dump(exclude={'event_hash'})
+        return any(event.event_hash == hashlib.sha256(legacy_canonical_json(
+            envelope, normalize_zero=mode)).hexdigest() for mode in (False, True))
+    raise ChainIntegrityError('Unsupported ledger schema: ' + event.schema_version)
+
 
 class ChainIntegrityError(Exception):
     pass
@@ -38,8 +54,16 @@ class ChainIntegrityError(Exception):
 class GenesisLedger:
     def __init__(self, db_path: str = ":memory:"):
         self.db_path = db_path
-        self._init_db()
-        self.verify_chain() # Fails fast if chain is broken
+        # Preflight before schema changes. Invalid history must not be altered.
+        if db_path != ':memory:' and Path(db_path).is_file() and Path(db_path).stat().st_size:
+            read_ledger_events(db_path)
+        try:
+            self._init_db()
+            self.verify_chain()
+        except BaseException:
+            if hasattr(self, 'conn'):
+                self.conn.close()
+            raise
         
     def _init_db(self):
         dirname = os.path.dirname(self.db_path)
@@ -89,10 +113,12 @@ class GenesisLedger:
         """)
         self.conn.commit()
 
+        self.conn.execute("BEGIN IMMEDIATE")
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM ledger_events")
         if cursor.fetchone()[0] == 0:
             self._write_genesis()
+        self.conn.commit()
             
     def _write_genesis(self):
         genesis_event = LedgerEvent(
@@ -125,7 +151,6 @@ class GenesisLedger:
                 event.event_hash, event.schema_version
             )
         )
-        self.conn.commit()
 
     def get_head(self) -> Optional[LedgerEvent]:
         cursor = self.conn.cursor()
@@ -150,7 +175,7 @@ class GenesisLedger:
             timestamp_utc=row["timestamp_utc"],
             actor=actor,
             event_type=row["event_type"],
-            payload=json.loads(row["payload_json"]),
+            payload=strict_json_loads(row["payload_json"]),
             parent_hash=row["parent_hash"],
             event_hash=row["event_hash"]
         )
@@ -161,6 +186,19 @@ class GenesisLedger:
         return [self._row_to_event(row) for row in cursor.fetchall()]
 
     def append(self, event_id: str, actor: Actor, event_type: str, payload: Dict[str, Any]) -> str:
+        if self.conn.in_transaction:
+            raise RuntimeError('Ledger append cannot nest inside an external transaction.')
+        self.conn.execute('BEGIN IMMEDIATE')
+        try:
+            self.verify_chain()
+            result = self._append_locked(event_id, actor, event_type, payload)
+            self.conn.commit()
+            return result
+        except BaseException:
+            self.conn.rollback()
+            raise
+
+    def _append_locked(self, event_id, actor, event_type, payload):
         head = self.get_head()
         if head is None:
             raise RuntimeError("Genesis ledger is empty; should have initialized.")
@@ -192,6 +230,29 @@ class GenesisLedger:
         self._insert_event(new_event)
         return new_event.event_hash
         
+    def claim_execution(self, proposal_id, nonce, actor_id, proposal_hash):
+        """Consume approval before side effects, serializing concurrent processes.
+
+        A crash or failed callback leaves the claim consumed. Recovery requires
+        operator reconciliation and a newly signed proposal, never an automatic retry.
+        """
+        self.conn.execute('BEGIN IMMEDIATE')
+        try:
+            self.verify_chain()
+            for row in self.conn.execute("SELECT * FROM ledger_events WHERE event_type IN ('ACTION_CLAIMED', 'ACTION_EXECUTED')"):
+                event = self._row_to_event(row)
+                if event.payload.get('proposal_id') == proposal_id or (
+                    event.actor.id == actor_id and event.payload.get('nonce') == nonce):
+                    raise ValueError('PROPOSAL_ALREADY_EXECUTED_OR_CLAIMED')
+            result = self._append_locked('CLAIM_' + uuid.uuid4().hex,
+                Actor(type='HUMAN', id=actor_id), 'ACTION_CLAIMED',
+                {'proposal_id': proposal_id, 'nonce': nonce, 'proposal_hash': proposal_hash})
+            self.conn.commit()
+            return result
+        except BaseException:
+            self.conn.rollback()
+            raise
+
     def get_approval_record(self, proposal_id: str) -> Optional[Dict[str, Any]]:
         events = self.get_events_by_proposal(proposal_id)
         for evt in events:
@@ -217,23 +278,33 @@ class GenesisLedger:
         return self.append(event_id, actor, "ARTIFACT_REGISTERED", payload)
 
     def verify_chain(self):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM ledger_events ORDER BY sequence ASC")
-        rows = cursor.fetchall()
-        
-        if not rows:
-            return
-            
-        prev_hash = "0" * 64
-        for i, row in enumerate(rows):
-            event = self._row_to_event(row)
-            if event.parent_hash != prev_hash:
-                raise ChainIntegrityError(
-                    f"CHAIN INTEGRITY FAILURE: Event {event.event_id} expected parent {prev_hash} but found {event.parent_hash}."
-                )
-            expected_hash = compute_event_hash(event)
-            if event.event_hash != expected_hash:
-                raise ChainIntegrityError(
-                    f"CHAIN INTEGRITY FAILURE: Event {event.event_id} has invalid hash. Expected {expected_hash}, observed {event.event_hash}."
-                )
-            prev_hash = event.event_hash
+        events = [self._row_to_event(row) for row in self.conn.execute(
+            'SELECT * FROM ledger_events ORDER BY sequence')]
+        verify_events(events)
+
+
+def verify_events(events):
+    previous = '0' * 64
+    for index, event in enumerate(events):
+        if event.sequence != index or event.parent_hash != previous:
+            raise ChainIntegrityError('Ledger sequence or parent mismatch at ' + event.event_id)
+        if index == 0 and (event.event_id != 'GENESIS' or event.event_type != 'LEDGER_INITIALIZED'):
+            raise ChainIntegrityError('Missing ledger genesis identity.')
+        if not event_hash_matches(event):
+            raise ChainIntegrityError('Genesis hash mismatch at ' + event.event_id +
+                '; history was not repaired or rehashed. Missing original actor metadata cannot be reconstructed.')
+        previous = event.event_hash
+
+
+def read_ledger_events(path):
+    """Read and verify historical records without DDL or new genesis insertion."""
+    conn = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        reader = object.__new__(GenesisLedger)
+        events = [reader._row_to_event(row) for row in conn.execute(
+            'SELECT * FROM ledger_events ORDER BY sequence')]
+        verify_events(events)
+        return events
+    finally:
+        conn.close()

@@ -121,6 +121,17 @@ class ControlPanel(QWidget):
         self.controls = {}
 
     def _on_capabilities(self, caps: CameraCapabilities):
+        if hasattr(caps, 'model_dump'):
+            data = caps.model_dump()
+            key = data['camera_stream_key']
+            renames = {'minimum_focus_distance_diopters': 'minimum_focus_distance',
+                       'exposure_time_range_ns': 'exposure_time_range'}
+            from dataclasses import fields
+            allowed = {field.name for field in fields(CameraCapabilities)} - {'camera_stream_key'}
+            values = {renames.get(k, k): v for k, v in data.items()
+                      if renames.get(k, k) in allowed and v is not None}
+            caps = CameraCapabilities(CameraStreamKey(data['device_id'], key['camera_id'],
+                key.get('logical_camera_id'), key.get('physical_camera_id')), **values)
         self.capabilities = caps
         k = caps.camera_stream_key
         self.lbl_camera.setText(f"Camera: {k.camera_id} (Log: {k.logical_camera_id}, Phys: {k.physical_camera_id})")
@@ -172,6 +183,8 @@ class ControlPanel(QWidget):
         _prepare_controls(self)
 
     def _send_request(self, control_type: str, value: Any):
+        if not self.capabilities:
+            return
         req_id = generate_id("REQ")
         state = ControlState(
             request_id=req_id,
@@ -182,23 +195,43 @@ class ControlPanel(QWidget):
         )
         self.requests[req_id] = state
         
-        msg = {
-            "message_type": "CONTROL_REQUEST",
-            "request_id": req_id,
-            "control_type": control_type,
-            "requested": value
-        }
-        self.gateway.send_control_message(msg)
-        state.status = ControlStateStatus.SENT
-        
+        parameter = {'FOCUS': 'focus_distance_diopters', 'EXPOSURE': 'exposure_time_ns',
+                     'ISO': 'sensor_sensitivity_iso'}.get(control_type)
+        if parameter is None:
+            state.status = ControlStateStatus.REJECTED
+            return
+        key = self.capabilities.camera_stream_key
+        msg = {'message_type': 'CAMERA_CONTROL_REQUEST', 'schema_version': '1',
+            'request_id': req_id, 'device_id': key.device_id, 'control_type': 'SET_PARAMETERS',
+            'camera_stream_key': {'camera_id': key.camera_id, 'logical_camera_id': key.logical_camera_id,
+                                  'physical_camera_id': key.physical_camera_id},
+            'requested_parameters': {parameter: value}}
+        state.status = ControlStateStatus.SENT if self.gateway.send_control_message(msg) else ControlStateStatus.FAILED
+
     def _on_response(self, response: dict):
+        if hasattr(response, 'model_dump'):
+            value = response.model_dump()
+            if value.get('message_type') != 'CAMERA_CONTROL_RESULT':
+                return
+            request = self.requests.get(value.get('request_id'))
+            if request is None:
+                return
+            parameter_key = {'FOCUS': 'focus_distance_diopters', 'EXPOSURE': 'exposure_time_ns', 'ISO': 'sensor_sensitivity_iso'}.get(request.control_type, request.control_type)
+            parameter = (value.get('parameter_results') or {}).get(parameter_key, {})
+            response = dict(request_id=value['request_id'], applied=parameter.get('applied'),
+                status=parameter.get('status', value.get('overall_status')), error_message=value.get('error_message'))
         req_id = response.get("request_id")
         if req_id not in self.requests:
             return # Ignore unmatched
             
         state = self.requests[req_id]
         state.applied_value = response.get("applied")
-        state.status = response.get("status")
+        raw_status = response.get('status')
+        try:
+            state.status = ControlStateStatus(getattr(raw_status, 'value', raw_status))
+        except ValueError:
+            # Partial/unconfirmed hardware responses must not become APPLIED.
+            state.status = ControlStateStatus.ACKNOWLEDGED
         state.error_message = response.get("error_message")
         state.confirmed_utc = int(time.time() * 1000)
         

@@ -4,8 +4,8 @@ from scripts.verify_acceptance import create_acceptance_bundles
 from virtual_lab.core.provenance_export import explain_provenance
 
 
-@pytest.fixture(scope="module")
-def bundles(tmp_path_factory):
+@pytest.fixture
+def bundles(tmp_path_factory, trusted_publisher):
     return create_acceptance_bundles(tmp_path_factory.mktemp("bundle-acceptance"))
 
 

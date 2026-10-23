@@ -6,7 +6,7 @@ from virtual_lab.core.ledger import GenesisLedger
 from virtual_lab.core.provenance_export import explain_provenance
 from scripts.build_vlab_bundle import build_vlab_bundle
 
-def test_vlab_build_and_provenance():
+def test_vlab_build_and_provenance(trusted_publisher):
     with tempfile.TemporaryDirectory() as tmp_workspace:
         # 1. Create a dummy workspace with genesis.db
         genesis_path = os.path.join(tmp_workspace, "genesis.db")

@@ -255,17 +255,9 @@ class AIWorkbench(QWidget):
         self._start_agent_worker("", self.current_tool_call, {"error": "Human rejected the execution."})
 
     def _execute_tool_and_resume(self):
-        # This is where we wire to the actual VirtualLab backend and Ledger
-        # For Beta 1, we simulate success and log to ledger
-        result = {"status": "success", "message": f"Successfully executed {self.current_tool_name}"}
-        
-        # 4. Genesis Ledger Integration
-        self._log_to_ledger(self.current_tool_name, self.current_tool_args)
-        
-        # Resume the loop
-        self._start_agent_worker("", self.current_tool_call, result)
+        self.chat_history.append("Legacy execution is disabled. No action or ledger write occurred.")
+        self._start_agent_worker("", self.current_tool_call,
+                                 {"status": "error", "message": "Legacy execution disabled"})
 
     def _log_to_ledger(self, tool_name, args):
-        # We simulate the ledger API here
-        # In the real app, this goes to workspace.ledger.append(..., Actor(type="AI", id="gemini"), ...)
-        self.chat_history.append(f"<span style='color: #94a3b8;'><i>[Ledger entry created with ACTOR_TYPE=AI]</i></span>\n")
+        raise NotImplementedError('Legacy workbench does not write provenance.')

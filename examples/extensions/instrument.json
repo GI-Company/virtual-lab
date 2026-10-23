@@ -1,0 +1,26 @@
+{
+  "format": "vlab-instrument-v1",
+  "instrument_id": "operator-declared-instrument",
+  "manufacturer": "Example",
+  "model": "CSV",
+  "acquisition_id": "demo-1",
+  "sample_id": "demo-sample",
+  "method": "Illustrative file import",
+  "channels": [
+    {
+      "column": "time",
+      "quantity": "time",
+      "unit": "s",
+      "role": "axis"
+    },
+    {
+      "column": "signal",
+      "quantity": "signal",
+      "unit": "dimensionless",
+      "role": "signal"
+    }
+  ],
+  "limitations": [
+    "Synthetic example, not physical measurements."
+  ]
+}

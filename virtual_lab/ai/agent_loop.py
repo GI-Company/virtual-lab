@@ -63,22 +63,7 @@ def _execute_tool_locally(name: str, args: dict, controller=None) -> dict:
     """
     Route a tool call to the VirtualLab backend.
     """
-    allowed_tools = {f.__name__: f for f in AGENT_TOOLS}
-    if name not in allowed_tools:
-        return {"status": "error", "message": f"Tool {name} lacks L1 authority or does not exist."}
-        
-    func = allowed_tools[name]
-    try:
-        # In a real integration, this would invoke the actual backend services.
-        # For the PoC, we just return a success representation of the proposal/read.
-        return {
-            "status": "success",
-            "action": name,
-            "recorded_args": args,
-            "epistemic_note": "Executed under strict L1 autonomy constraints."
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    return {"status": "error", "message": "Legacy execution is disabled. No action or ledger write occurred."}
 
 
 # ── Worker ────────────────────────────────────────────────────────────────────

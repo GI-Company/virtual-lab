@@ -4,7 +4,7 @@ import sqlite3
 import os
 import tempfile
 import hashlib
-from virtual_lab.core.canonical import canonical_json
+from virtual_lab.core.canonical import canonical_json, legacy_canonical_json
 
 MAX_ZIP_SIZE = 100 * 1024 * 1024
 MAX_FILES = 1000
@@ -22,49 +22,14 @@ def _read_bounded(bundle: zipfile.ZipFile, name_or_info, max_bytes: int) -> byte
 
 
 def verify_genesis_chain(db_path: str):
-    conn = sqlite3.connect(db_path)
+    from virtual_lab.core.ledger import read_ledger_events, ChainIntegrityError
     try:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM ledger_events ORDER BY sequence ASC")
-        rows = cursor.fetchall()
-    finally:
-        conn.close()
-    
-    if not rows:
+        events = [event.model_dump(exclude={'event_hash'}) for event in read_ledger_events(db_path)]
+    except (ChainIntegrityError, ValueError) as exc:
+        raise VerifierError(str(exc)) from exc
+    if not events:
         return [], []
-        
-    prev_hash = "0" * 64
-    events = []
-    for row in rows:
-        keys = row.keys()
-        envelope = {
-            "schema_version": row["schema_version"],
-            "sequence": row["sequence"],
-            "event_id": row["event_id"],
-            "timestamp_utc": row["timestamp_utc"],
-            "actor": {
-                "type": row["actor_type"],
-                "id": row["actor_id"],
-                "provider": row["actor_provider"] if "actor_provider" in keys else None,
-                "model": row["actor_model"] if "actor_model" in keys else None,
-            },
-            "event_type": row["event_type"],
-            "payload": json.loads(row["payload_json"]),
-            "parent_hash": row["parent_hash"]
-        }
 
-        canonical_bytes = canonical_json(envelope)
-        expected_hash = hashlib.sha256(canonical_bytes).hexdigest()
-        
-        if row["parent_hash"] != prev_hash:
-            raise VerifierError(f"Genesis chain broken at sequence {row['sequence']}")
-        if row["event_hash"] != expected_hash:
-            raise VerifierError(f"Genesis hash mismatch at sequence {row['sequence']}")
-            
-        prev_hash = row["event_hash"]
-        events.append(envelope)
-        
     # Scientific invariants validation
     from virtual_lab.domain.state_machine import ScientificDAG, Hypothesis, Protocol, Prediction, ExperimentRun, DAGObservation, Comparison, Decision
     from virtual_lab.domain.epistemics import EpistemicState, QualityState
@@ -174,7 +139,13 @@ def explain_provenance(vlab_path: str) -> str:
                     raise VerifierError(f"Malformed manifest JSON: {e}")
 
                 # 5. Validate canonical representation
-                expected_canonical = canonical_json(manifest)
+                scheme = manifest.get('canonicalization', 'python-json-v1')
+                if scheme == 'jcs-v1':
+                    expected_canonical = canonical_json(manifest)
+                elif scheme == 'python-json-v1':
+                    expected_canonical = legacy_canonical_json(manifest)
+                else:
+                    raise VerifierError('Unsupported manifest canonicalization.')
                 if manifest_bytes != expected_canonical:
                     raise VerifierError("Manifest is not in canonical JSON form.")
 

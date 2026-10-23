@@ -26,6 +26,7 @@ class Proposal:
     issued_at: str
     expires_at: str
     nonce: str
+    canonicalization: str = "jcs-v1"
 
 def get_canonical_json(proposal: Proposal) -> bytes:
     """Returns RFC 8785 / JCS-style canonical JSON representation using central library."""
@@ -37,7 +38,7 @@ def hash_proposal(proposal: Proposal) -> bytes:
 def _parse_iso_utc(value: str) -> datetime:
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        raise ValueError('Timezone required for approval timestamps')
     return dt.astimezone(timezone.utc)
 
 
@@ -62,6 +63,10 @@ class ApprovalPolicy:
         execute_fn: Callable[[Proposal], Any],
         human_actor_id: Optional[str] = None
     ) -> Any:
+        if self.genesis_ledger is None or self.genesis_ledger.db_path == ':memory:':
+            raise ValueError('DURABLE_LEDGER_REQUIRED')
+        if proposal.canonicalization != 'jcs-v1' or not proposal.proposal_id or not proposal.nonce:
+            raise ValueError('INVALID_PROPOSAL_IDENTITY_OR_CANONICALIZATION')
         # 1. Verify signature
         verify_key = nacl.signing.VerifyKey(public_key_bytes)
         proposal_hash = hash_proposal(proposal)
@@ -92,7 +97,10 @@ class ApprovalPolicy:
         # 2. Check expiration and replay
         now = datetime.now(timezone.utc)
         expires_at = _parse_iso_utc(proposal.expires_at)
-        if now > expires_at:
+        issued_at = _parse_iso_utc(proposal.issued_at)
+        if issued_at > now or expires_at <= issued_at:
+            raise ValueError('INVALID_APPROVAL_TIME_WINDOW')
+        if now >= expires_at:
             raise ValueError("APPROVAL_EXPIRED")
 
         replay_key = (proposal.proposal_id, proposal.nonce)
@@ -105,6 +113,9 @@ class ApprovalPolicy:
             if not record:
                 raise ValueError("APPROVAL_NOT_FOUND_IN_GENESIS")
                 
+            for field, expected in asdict(proposal).items():
+                if field not in record or record[field] != expected:
+                    raise ValueError('PROPOSAL_FIELD_MISMATCH: ' + field)
             # Target, action_type, and parameters EXACTLY identical to the immutable ledger record
             if record.get("target") != proposal.target:
                 raise ValueError("TARGET_MISMATCH")
@@ -115,20 +126,33 @@ class ApprovalPolicy:
                 
             # Check for HUMAN_DECISION event for this proposal and ensure it hasn't already executed
             events = self.genesis_ledger.get_events_by_proposal(proposal.proposal_id)
+            if not any(evt.event_type == 'RULE_EVALUATION' and evt.payload.get('passed') is True for evt in events):
+                raise ValueError('PROPOSAL_RULE_CHECK_NOT_PASSED')
             approved = False
             for evt in events:
                 if evt.event_type == "ACTION_EXECUTED":
                     raise ValueError("PROPOSAL_ALREADY_EXECUTED")
                 if evt.event_type == "HUMAN_DECISION" and evt.payload.get("decision") == "APPROVED":
                     recorded_sig = evt.payload.get("signature")
-                    if recorded_sig and recorded_sig != signature.hex():
+                    if recorded_sig != signature.hex() or evt.actor.id != signer.signer_id:
                         raise ValueError("SIGNATURE_MISMATCH_IN_GENESIS")
                     approved = True
             if not approved:
                 raise ValueError("PROPOSAL_NOT_APPROVED_IN_GENESIS")
 
-        # 4. Execute (Fail closed, no mock executors)
-        result = execute_fn(proposal)
+        self.genesis_ledger.claim_execution(proposal.proposal_id, proposal.nonce,
+            signer.signer_id, proposal_hash.hex())
+        # The durable claim remains consumed even if this callback fails or crashes.
+        try:
+            result = execute_fn(proposal)
+        except BaseException as exc:
+            from virtual_lab.core.ledger import Actor
+            import uuid
+            self.genesis_ledger.append('FAILED_' + uuid.uuid4().hex,
+                Actor(type='HUMAN', id=signer.signer_id), 'ACTION_FAILED',
+                {'proposal_id': proposal.proposal_id, 'nonce': proposal.nonce,
+                 'error_type': type(exc).__name__, 'reconciliation_required': True})
+            raise
         self._executed_keys.add(replay_key)
         if self.genesis_ledger:
             from virtual_lab.core.ledger import Actor

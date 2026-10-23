@@ -18,47 +18,47 @@ class ProposeComparisonArgs(BaseModel):
 
 def get_hypothesis(id: str) -> str:
     """Retrieve an existing hypothesis from the authoritative state."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def get_protocol(id: str) -> str:
     """Retrieve a frozen protocol."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def get_prediction(id: str) -> str:
     """Retrieve a frozen prediction."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def get_observation(id: str) -> str:
     """Retrieve an observation."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def search_evidence(query: str) -> str:
     """Search for relevant evidence in the vault."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def propose_hypothesis(description: str) -> str:
     """Propose a new hypothesis for human review. Does NOT create authoritative truth."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def propose_prediction(hypothesis_id: str, expected_outcome: str, rationale: str) -> str:
     """Propose a prediction."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def propose_comparison(prediction_id: str, observation_id: str) -> str:
     """Propose comparing an observation to a prediction."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def propose_decision(comparison_ids: list[str], outcome: str) -> str:
     """Propose a scientific decision based on comparisons."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def request_human_approval(proposal_id: str) -> str:
     """Submit a proposal to the human operator for Ed25519 signature."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 def explain_provenance(id: str) -> str:
     """Retrieve the Genesis audit trail for an object."""
-    pass
+    raise NotImplementedError("Legacy tool is retired; use the verified runtime and durable approval service.")
 
 AGENT_TOOLS = [
     get_hypothesis,

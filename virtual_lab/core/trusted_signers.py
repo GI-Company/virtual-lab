@@ -44,28 +44,64 @@ _REGISTRY = {
         permitted_roles=[SignerRole.HUMAN_APPROVAL],
         added_at="2026-09-18T00:00:00Z"
     ),
-    # Publisher key for bundle signing
+    # Compromised demonstration publisher: private seed was public. Never trust it.
     "414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935": TrustedSigner(
         signer_id="SYSTEM-PUBLISHER",
         public_key_hex="414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935",
         fingerprint=_fingerprint("414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405935"),
-        status=TrustState.TRUSTED,
-        permitted_roles=[SignerRole.BUNDLE_PUBLISHER, SignerRole.PROGRAM_SIGNER],
+        status=TrustState.REVOKED,
+        permitted_roles=[],
         added_at="2026-09-18T00:00:00Z"
     )
 }
 
 def get_signer(public_key_hex: str) -> Optional[TrustedSigner]:
-    return _REGISTRY.get(public_key_hex)
+    builtin = _REGISTRY.get(public_key_hex)
+    if builtin and builtin.status == TrustState.REVOKED:
+        return builtin
+    return builtin or _configured_signer(public_key_hex)
 
 def get_signer_status(public_key_hex: str) -> tuple[TrustState, Optional[str]]:
-    signer = _REGISTRY.get(public_key_hex)
+    signer = get_signer(public_key_hex)
     if not signer:
         return TrustState.UNKNOWN, None
     return signer.status, signer.fingerprint
 
 def verify_signer_role(public_key_hex: str, required_role: SignerRole) -> bool:
-    signer = _REGISTRY.get(public_key_hex)
+    signer = get_signer(public_key_hex)
     if not signer or signer.status != TrustState.TRUSTED:
         return False
     return required_role in signer.permitted_roles
+
+
+def _configured_signer(public_key_hex):
+    """Explicit operator trust file. A package can never enroll its own signer."""
+    import os
+    from pathlib import Path
+    from virtual_lab.core.canonical import strict_json_loads
+    configured = os.environ.get('VIRTUALLAB_TRUST_STORE')
+    if not configured:
+        return None
+    path = Path(configured).expanduser()
+    with path.open('rb') as stream:
+        raw = stream.read(1024 * 1024 + 1)
+    if len(raw) > 1024 * 1024:
+        raise ValueError('Trust store exceeds size limit.')
+    document = strict_json_loads(raw)
+    if set(document) != {'format', 'signers'} or document['format'] != 'vlab-trust-v1':
+        raise ValueError('Unsupported trust-store format.')
+    seen = set(); selected = None
+    for entry in document['signers']:
+        if set(entry) != {'signer_id', 'public_key_hex', 'roles'}:
+            raise ValueError('Malformed trust-store signer.')
+        public = entry['public_key_hex']
+        if len(bytes.fromhex(public)) != 32 or public in seen:
+            raise ValueError('Invalid or duplicate signer public key.')
+        seen.add(public)
+        roles = [SignerRole(role) for role in entry['roles']]
+        if not isinstance(entry['signer_id'], str) or not entry['signer_id'].strip():
+            raise ValueError('A signer identity is required.')
+        if public == public_key_hex:
+            selected = TrustedSigner(entry['signer_id'], public, _fingerprint(public),
+                TrustState.TRUSTED, roles, 'operator-configured')
+    return selected

@@ -4,7 +4,7 @@ from virtual_lab.core.provenance_export import explain_provenance
 from scripts.build_vlab_bundle import build_vlab_bundle
 
 
-def test_nested_prediction_manifest_is_verified(tmp_path):
+def test_nested_prediction_manifest_is_verified(tmp_path, trusted_publisher):
     workspace = tmp_path / 'workspace'
     workspace.mkdir()
     ledger = GenesisLedger(str(workspace / 'genesis.db'))

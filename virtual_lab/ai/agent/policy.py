@@ -66,14 +66,8 @@ class PolicyEngine:
         raise ValueError(f"Unknown action type {schema.action_type}")
 
     def human_approve_proposal(self, episode_id: str, proposal_id: str, human_actor: str):
-        decision = ProposalDecision(
-            proposal_id=proposal_id,
-            decision=ProposalDecisionStatus.APPROVED,
-            human_actor=human_actor,
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
-        self.genesis.record_human_decision(proposal_id, "APPROVED", human_actor)
-        return decision
+        raise LocalResearchPolicyException(
+            'Unsigned approval is disabled; use domain.ApprovalPolicy with a full signed proposal and durable ledger.')
 
     def human_reject_proposal(self, episode_id: str, proposal_id: str, human_actor: str):
         decision = ProposalDecision(
@@ -86,15 +80,5 @@ class PolicyEngine:
         return decision
 
     def execute_approved_action(self, episode_id: str, proposal_id: str, tool_name: str, args: Dict[str, Any]):
-        # This bypasses the typical interception because it's invoked by the human gateway
-        try:
-            if tool_name in self._executors:
-                result = self._executors[tool_name](**args)
-            else:
-                raise NotImplementedError(f"No executor registered for ACTION tool {tool_name}")
-            
-            self.genesis.record_action_executed(episode_id, proposal_id, target_ref=tool_name)
-            return result
-        except Exception as e:
-            self.genesis.record_action_failed(episode_id, proposal_id, str(e))
-            raise
+        raise LocalResearchPolicyException(
+            'Legacy action execution is disabled; use domain.ApprovalPolicy with durable replay protection.')
