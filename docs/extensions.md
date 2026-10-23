@@ -7,12 +7,24 @@ The extension boundary distinguishes simulation models, predictive models, advis
 | Role | Supported adapter | Output status | Entry point |
 |---|---|---|---|
 | Simulation | `vlab-ode-v1` data-only JSON equations | SIMULATED | Simulation tab: Import equation model JSON; or CLI |
-| Predictor | `vlab-linear-v1` named multivariate linear mapping | PREDICTED | CLI |
+| Predictor | `vlab-linear-v1` named multivariate linear mapping | PREDICTED | Projects → Model & instrument files; or CLI |
 | AI assistant | Explicit OpenAI-compatible text endpoint | INFERRED, non-authoritative | CLI |
-| Instrument | `vlab-instrument-v1` channel declaration plus CSV | UNKNOWN | CLI |
+| Instrument | `vlab-instrument-v1` channel declaration plus CSV | UNKNOWN | Projects → Model & instrument files; or CLI |
 | Physical gateway | Session-paired loopback WebSockets | Protocol-dependent; physical calibration not validated | Instruments tab |
 
-See runnable examples in `examples/extensions/`. Predictors, CSV instruments and generic assistant endpoints are not yet integrated into the desktop notebook. Gemini's existing optional desktop assistance remains separate. These are initial adapters and contracts, not universal compatibility with every instrument or model format.
+See runnable examples in `examples/extensions/`. Predictors and CSV instruments are integrated into the desktop notebook. Generic assistant endpoints remain CLI-only. Gemini's existing optional desktop assistance remains separate. These are initial adapters and contracts, not universal compatibility with every instrument or model format.
+
+## Desktop study workflow
+
+Open an experiment in **Projects**, then choose **Model & instrument files** in its notebook. Select a predictive model or instrument CSV, enter the manifest path, and provide either a JSON input object (for example `{"concentration":3}`) or a CSV file path. Click **Run adapter and attach result**.
+
+The result appears in Result details and in the conclusion's supporting-results choices. Its artifact retains the exact model/instrument manifest and original CSV bytes, inputs/outputs and status. Prediction inputs are operator-supplied UNKNOWN values; outputs remain PREDICTED. CSV samples remain UNKNOWN. Recording time is the local attachment time, not a claimed physical acquisition timestamp. No source file is edited, no instrument is controlled, and no network request occurs.
+
+The **Export selected result CSV** action exports named values with units, epistemic state and source/artifact hashes. Text cells that could be interpreted as spreadsheet formulas receive an apostrophe prefix; numeric scientific values and the original archived source remain unchanged. Study packages include these self-contained artifacts, so the original external files are not needed after import.
+
+Inspection and import check record/experiment identity, retained source hashes, status, channel samples and deterministic predictor outputs. The original adapter fingerprint is retained rather than rewritten when installed code changes. Verification demonstrates internal consistency of a declared v1 mapping, not its scientific validity or authenticated authorship. Conclusions remain researcher-authored interpretations. This export format is not a guarantee that older application versions understand the new extension records.
+
+Attachment writes an immutable artifact and a truthful artifact-recorded event before attaching the observation. A database failure can leave a recorded but unattached artifact; it does not create a successful attachment notification. Cross-database crash recovery and operator reconciliation remain operational work. Do not rehash, delete history or fabricate an attachment event to hide this condition.
 
 ## Run in a disposable workspace
 
