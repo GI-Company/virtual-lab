@@ -173,14 +173,30 @@ class LinearManifest(BaseModel):
 
 
 def predict_linear(path, inputs):
-    raw, value = read_manifest(path); model = LinearManifest.model_validate(value)
+    raw, _ = read_manifest(path)
+    return predict_linear_bytes(raw, inputs)
+
+
+def predict_linear_bytes(raw, inputs):
+    if len(raw) > 1024 * 1024: raise ValueError("Predictor manifest exceeds size limit.")
+    model = LinearManifest.model_validate(strict_json_loads(raw))
     if set(inputs) != set(model.inputs) or any(type(v) not in (float, int) or not math.isfinite(v) for v in inputs.values()):
         raise ValueError('Supply exactly the declared finite input channels.')
-    result = np.array(model.coefficients) @ np.array([inputs[k] for k in model.inputs]) + model.intercept
-    if not np.isfinite(result).all(): raise ValueError('Nonfinite predictor output.')
+    # Exact rational accumulation of declared binary64 values makes replay
+    # independent of a platform's BLAS summation order. Round each output once.
+    from fractions import Fraction
+    vector = [Fraction.from_float(float(inputs[k])) for k in model.inputs]
+    try:
+        result = [float(sum((Fraction.from_float(c) * v for c, v in zip(row, vector)),
+                            Fraction.from_float(bias)))
+                  for row, bias in zip(model.coefficients, model.intercept)]
+    except OverflowError:
+        raise ValueError('Nonfinite predictor output.') from None
+    if not all(math.isfinite(v) for v in result): raise ValueError('Nonfinite predictor output.')
     return {'kind': 'predictive_model', 'epistemic_state': 'PREDICTED', 'model_id': model.id,
         'model_version': model.version, 'model_sha256': hashlib.sha256(raw).hexdigest(),
         'model_manifest': raw.decode('utf-8'), 'adapter_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'inputs': inputs, 'input_units': dict(zip(model.inputs, model.input_units)),
-        'outputs': dict(zip(model.outputs, result.tolist())),
+        'arithmetic': 'binary64-exact-linear-v1',
+        'outputs': dict(zip(model.outputs, result)),
         'output_units': dict(zip(model.outputs, model.output_units)), 'limitations': model.limitations}

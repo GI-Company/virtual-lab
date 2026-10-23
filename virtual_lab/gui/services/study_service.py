@@ -190,6 +190,49 @@ class StudyService:
             if scope != record.planning_scope:
                 raise ValueError('Research plan timing metadata disagrees with selected results.')
 
+    def save_predictor(self, manifest_path, inputs):
+        from virtual_lab.extensions.models import predict_linear
+        return self._save_extension(predict_linear(manifest_path, inputs))
+
+    def save_csv_instrument(self, manifest_path, csv_path):
+        from virtual_lab.extensions.instruments import CSVInstrument
+        return self._save_extension(CSVInstrument(manifest_path).acquire(csv_path))
+
+    def _save_extension(self, result):
+        from virtual_lab.extensions.records import validate_result, INSTRUMENTS
+        from virtual_lab.core.canonical import canonical_json
+        from virtual_lab.domain.observation import NormalizedObservation, ObservationKind
+        from virtual_lab.domain.epistemics import EpistemicState
+        exp = self.workspace.active_experiment
+        if exp is None:
+            raise ValueError('Open an experiment before attaching an extension result.')
+        validate_result(result)
+        record = {'format': 'vlab-notebook-extension-v1', 'run_id': str(uuid.uuid4()),
+            'recorded_at': datetime.now(timezone.utc).isoformat(), 'experiment_id': exp.id,
+            'result': result}
+        raw = canonical_json(record); sha = hashlib.sha256(raw).hexdigest()
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError('Extension record exceeds size limit.')
+        root = data_root() / 'notebook-extensions'; root.mkdir(parents=True, exist_ok=True)
+        target = root / (sha + '.json')
+        with target.open('xb') as stream:
+            import os
+            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+        obs = NormalizedObservation(observation_id=record['run_id'], experiment_id=exp.id,
+            session_id=record['run_id'], instrument_id=INSTRUMENTS[result['kind']],
+            kind=ObservationKind.MODEL_EVALUATION if result['kind'] == 'predictive_model' else ObservationKind.SENSOR_STREAM, quantities=[],
+            artifact_path=str(target), artifact_sha256=sha, acquisition_utc=record['recorded_at'],
+            sample_count=len(result['samples']) if result['kind'] == 'instrument_import' else 1,
+            epistemic_state=EpistemicState(result['epistemic_state']),
+            notes='Retained source and adapter output; not independent scientific or instrument validation.')
+        self._event('EXTENSION_ARTIFACT_RECORDED', {'observation_id': obs.observation_id,
+            'experiment_id': exp.id, 'kind': result['kind'], 'epistemic_state': result['epistemic_state'],
+            'artifact_path': str(target), 'artifact_sha256': sha})
+        self.store.save_observation(obs)
+        exp.attach_observation(obs)
+        self.workspace.observationCommitted.emit(obs)
+        return obs
+
     def save_calibration(self, result):
         from virtual_lab.domain.observation import NormalizedObservation, ObservationKind, QuantityDescriptor, PhysicalDimension
         from virtual_lab.domain.epistemics import EpistemicState
@@ -326,6 +369,22 @@ class StudyService:
             raise ValueError("This legacy result has no verifiable artifact reference.")
         if path.is_symlink() or digest(path) != obs.artifact_sha256:
             raise ValueError("Result artifact hash mismatch.")
+        if obs.instrument_id in ('extension_predictor', 'extension_csv'):
+            from virtual_lab.core.canonical import strict_json_loads
+            from virtual_lab.extensions.records import validate_record, INSTRUMENTS
+            if path.stat().st_size > 8 * 1024 * 1024:
+                raise ValueError('Extension record exceeds size limit.')
+            record = validate_record(strict_json_loads(path.read_bytes()))
+            result = record['result']
+            expected_samples = len(result['samples']) if result['kind'] == 'instrument_import' else 1
+            if (record['run_id'] != obs.observation_id or record['run_id'] != obs.session_id
+                or record['experiment_id'] != obs.experiment_id or record['recorded_at'] != obs.acquisition_utc
+                or result['epistemic_state'] != obs.epistemic_state.value
+                or INSTRUMENTS[result['kind']] != obs.instrument_id
+                or obs.kind.value != ('MODEL_EVALUATION' if result['kind'] == 'predictive_model' else 'SENSOR_STREAM')
+                or obs.sample_count != expected_samples or obs.quantities):
+                raise ValueError('Extension observation identity or status mismatch.')
+            return record
         if obs.instrument_id in ('alphagenome', 'alphafold_db', 'bitvision_simulator_audit'):
             result = CompletedRun(str(path), obs.artifact_sha256).read()
             if result['run_id'] != obs.session_id or result['epistemic_state'] != obs.epistemic_state.value:
@@ -390,12 +449,15 @@ class StudyService:
             raise ValueError('Open an experiment first.')
         obs = next((o for o in self.store.get_observations_for_experiment(exp.id)
                     if o.observation_id == observation_id), None)
-        if obs is None or obs.instrument_id != 'simulation':
-            raise ValueError('Select a saved simulation to export trajectory data.')
+        if obs is None or obs.instrument_id not in ('simulation', 'extension_predictor', 'extension_csv'):
+            raise ValueError('Select a saved simulation, predictor or CSV instrument result to export data.')
         destination = Path(destination).expanduser()
         if destination.suffix != '.csv':
             raise ValueError('Use a filename ending in .csv.')
         result = self.inspect(obs)
+        if obs.instrument_id in ('extension_predictor', 'extension_csv'):
+            from virtual_lab.extensions.records import result_csv
+            return publish_new_file(destination, result_csv(result, obs.observation_id, obs.artifact_sha256))
         return publish_new_file(destination, simulation_csv(dict(result, experiment_id=obs.experiment_id)))
 
     def export_study(self, destination):

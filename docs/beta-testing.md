@@ -81,7 +81,7 @@ Remaining gates before a general or instrument-connected release:
 
 - Real hardware validation and client support for the pairing protocol; no physical device has been certified.
 - Vendor adapters, sample identity assurance, calibration traceability, acquisition replay handling and authenticated remote transport. The current receiver is loopback-only. LAN discovery/unauthenticated network control are not supported by this beta.
-- Integration of extension results into the desktop study notebook/export workflow. The CLI currently writes a separate result artifact with a ledger anchor; it does not silently add it to a scientific conclusion.
+- Generic AI endpoint integration into the desktop remains pending. Linear predictors and declared CSV instruments now attach through Projects → Model & instrument files and round-trip with the notebook. CLI-generated results remain separate unless explicitly run and attached through the notebook; no result is silently added to a conclusion.
 - Real provider/model compatibility tests for each configured AI endpoint; this verification uses an offline local provider, not a live cloud run. No arbitrary weights or file formats are supported by inference.
 - A passing hosted CI run on supported Python versions and packaging platforms. Previous hosted runs were blocked by GitHub account billing; local results do not substitute for those platform checks.
 - Optional MLX/model-weights, pandas/AlphaGenome, Kotlin interop and live cloud checks omitted from the local suite remain unverified where skipped.

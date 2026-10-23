@@ -351,6 +351,10 @@ class VirtualLabApplication(QMainWindow):
             sim_events = [e for e in all_events if e.get("event_type") in ("SIMULATION_SAVED", "DESIGN_SAVED")]
             exp = self.workspace.active_experiment
             obs = self.projects.service.store.get_observations_for_experiment(exp.id) if exp else []
+            for observation in obs:
+                self.projects.service.inspect(observation)
+            self.ledger_status.setToolTip('')
+            self.ledger_status.setStyleSheet('color: #22c55e; font-weight: bold;')
             imported_events = [e for e in all_events if e.get("event_type") == "STUDY_IMPORTED"]
             if self.ledger is not None:
                 for row in self.ledger.conn.execute("SELECT event_type FROM ledger_events WHERE event_type = 'STUDY_IMPORTED'"):
@@ -364,18 +368,19 @@ class VirtualLabApplication(QMainWindow):
                 plans = sum(o.instrument_id == 'research_plan' for o in obs)
                 sims = sum(o.instrument_id == 'simulation' for o in obs)
                 conclusions = sum(o.instrument_id == 'research_conclusion' for o in obs)
-                for o in obs:
-                    self.projects.service.inspect(o)
                 self.ledger_status.setText(
                     f"Imported study verified ({len(obs)} records: {plans} plan, {sims} simulation, {conclusions} conclusion · 0 local runs)"
                 )
             elif obs:
                 self.ledger_status.setText(f"{len(obs)} study record(s) verified (no local simulation runs yet)")
+            elif all_events:
+                self.ledger_status.setText("Ledger chain verified (no saved research results yet)")
             else:
                 self.ledger_status.setText("No local ledger yet")
             self._refresh_pipeline(obs)
         except Exception as exc:
             self.ledger_status.setText("INTEGRITY ERROR")
+            self.ledger_status.setStyleSheet("color: #ef4444; font-weight: bold;")
             self.ledger_status.setToolTip(str(exc))
 
     def _refresh_pipeline(self, obs=None):
