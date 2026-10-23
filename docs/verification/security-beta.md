@@ -1,5 +1,7 @@
 # Security beta verification, October 23, 2026
 
+Subsequent desktop notebook integration and updated test results are recorded in the [notebook follow-up](notebook-beta.md). The results below describe the initial security beta batch.
+
 This batch starts from `33e477afabd0b8de729c37f692d28a2c65ecc9ea`. It prepares four beta candidates without changing main or production research data. It is a scoped security/provenance hardening verification, not a replacement for the original 38-finding independent audit.
 
 ## Actual local results

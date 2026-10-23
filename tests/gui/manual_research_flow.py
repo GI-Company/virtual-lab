@@ -51,6 +51,7 @@ def main(root):
     from virtual_lab.version import __version__
     assert window.windowTitle().startswith(f"VirtualLab v{__version__} - Scientific Cockpit")
     assert window.tabs.count() == 13 and window.tabs.tabText(0) == 'Projects'
+    assert window.ledger_status.text().startswith('Ledger chain verified')
     assert window.ai_enable_button.isEnabled() == (window.edition != 'high-school')
     if '--shell-only' in sys.argv:
         assert window.runtime.agent_runtime is None and not window.runtime.gateway.server.isListening()

@@ -57,10 +57,21 @@ class CSVInstrument:
         self.raw_manifest, value = read_manifest(manifest_path)
         self.manifest = InstrumentManifest.model_validate(value)
 
+    @classmethod
+    def from_bytes(cls, raw):
+        if len(raw) > 1024 * 1024: raise ValueError("Instrument manifest exceeds size limit.")
+        instance = object.__new__(cls)
+        instance.raw_manifest = raw
+        instance.manifest = InstrumentManifest.model_validate(strict_json_loads(raw))
+        return instance
+
     def describe(self): return self.manifest
 
     def acquire(self, source):
         with Path(source).open('rb') as stream: raw = stream.read(1024*1024+1)
+        return self.acquire_bytes(raw)
+
+    def acquire_bytes(self, raw):
         if len(raw) > 1024*1024: raise ValueError('Instrument CSV exceeds 1 MiB.')
         reader = csv.DictReader(io.StringIO(raw.decode('utf-8-sig')))
         expected = [c.column for c in self.manifest.channels]
@@ -76,6 +87,7 @@ class CSVInstrument:
         return {'kind': 'instrument_import', 'epistemic_state': 'UNKNOWN',
             'declarations': self.manifest.model_dump(), 'samples': rows,
             'source_sha256': hashlib.sha256(raw).hexdigest(),
+            'adapter_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             'manifest_sha256': hashlib.sha256(self.raw_manifest).hexdigest(),
             'raw_csv_base64': __import__('base64').b64encode(raw).decode('ascii'), 'raw_manifest': self.raw_manifest.decode('utf-8'),
             'limitations': ['File import; instrument/sample identity is operator-declared.',
