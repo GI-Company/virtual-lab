@@ -25,7 +25,7 @@ def test_exact_decimal_precision_and_duplicate_imports(tmp_path):
 
 
 @pytest.mark.parametrize('change', [
-    {'epistemic_state':'MEASURED'}, {'peak_count':True}, {'schema_version':True},
+    {'epistemic_state':'MEASURED'}, {'approved_nonconfidential':1}, {'schema_version':2.0}, {'peak_count':True}, {'schema_version':True},
     {'sample_id':'../secret'}, {'acquired_at_utc':'2026-01-01'}, {'import_status':'failed'},
     {'source_sha256':'a'*64}, {'unexpected':'value'}, {'approved_nonconfidential':False},
 ])
@@ -95,3 +95,36 @@ def test_duplicate_json_key_and_large_manifest_rejected(tmp_path):
     with pytest.raises(PilotError) as exc:
         verify_centroid_bundle(path)
     assert exc.value.code == 'SIZE_LIMIT'
+
+
+def test_normalization_handles_bounded_extreme_precision():
+    raw = ('mz,intensity\n1.' + '1'*97 + 'e-100,0\n').encode()
+    normalized, count = normalize_centroid_csv(raw)
+    assert count == 1 and normalize_centroid_csv(normalized)[0] == normalized
+
+
+def test_source_changed_after_preview_rejected(tmp_path):
+    source = tmp_path/'input.csv'
+    source.write_text('mz,intensity\n100,2\n')
+    with pytest.raises(PilotError, match='preview'):
+        import_centroid_csv(source, tmp_path/'runs', sample_id='s', instrument_id='i', operator_id='o',
+            approved_nonconfidential=True, expected_source_sha256='0'*64)
+    assert not (tmp_path/'runs').exists()
+
+
+def test_oversized_file_and_nonregular_file_rejected(tmp_path):
+    import os
+    from virtual_lab.pilots.schemas import MAX_SOURCE_BYTES
+    from virtual_lab.pilots.storage import read_bounded
+    source = tmp_path/'oversized.csv'
+    with source.open('wb') as stream:
+        stream.truncate(MAX_SOURCE_BYTES + 1)
+    with pytest.raises(PilotError) as exc:
+        read_bounded(source, MAX_SOURCE_BYTES)
+    assert exc.value.code == 'SIZE_LIMIT'
+    if hasattr(os, 'mkfifo'):
+        fifo = tmp_path/'pipe.csv'
+        os.mkfifo(fifo)
+        with pytest.raises(PilotError) as exc:
+            read_bounded(fifo, MAX_SOURCE_BYTES)
+        assert exc.value.code == 'UNSAFE_PATH'

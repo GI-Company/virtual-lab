@@ -47,6 +47,9 @@ def _decimal(value, line):
     # Bound decimal expansion, plotting range and aggregate memory use explicitly.
     if not result.is_finite() or (result and not -100 <= result.adjusted() <= 100):
         raise PilotError('NUMERIC_RANGE', f'CSV row {line} exceeds supported numeric range (1e-100 to <1e101)')
+    digits = ''.join(str(d) for d in result.as_tuple().digits).rstrip('0')
+    if len(digits) > 100:
+        raise PilotError('NUMERIC_PRECISION', f'CSV row {line} exceeds 100 significant digits')
     return result
 
 
@@ -54,7 +57,12 @@ def canonical_decimal(value):
     if value == 0:
         return '0'
     text = format(value, 'f')
-    return text.rstrip('0').rstrip('.') if '.' in text else text
+    fixed = text.rstrip('0').rstrip('.') if '.' in text else text
+    if len(fixed) <= 128:
+        return fixed
+    digits = ''.join(str(d) for d in value.as_tuple().digits).rstrip('0')
+    mantissa = digits[0] + ('.' + digits[1:] if len(digits) > 1 else '')
+    return ('-' if value < 0 else '') + mantissa + 'e' + str(value.adjusted())
 
 
 def parse_centroids(source):
@@ -95,10 +103,7 @@ def normalize_centroid_csv(source):
     return output.getvalue().encode('utf-8'), len(peaks)
 
 
-def load_manifest(manifest_path):
-    path = Path(manifest_path)
-    if path.name != 'manifest.json':
-        raise PilotError('MANIFEST_SCHEMA', 'Expected a regular manifest.json file')
+def _parse_manifest(raw):
     def unique(pairs):
         result = {}
         for key, value in pairs:
@@ -107,7 +112,6 @@ def load_manifest(manifest_path):
             result[key] = value
         return result
     try:
-        raw = read_bounded(path, MAX_MANIFEST_BYTES)
         parsed = Manifest.model_validate(json.loads(raw, object_pairs_hook=unique))
         manifest = parsed.model_dump()
         for entry in manifest['artifacts']:
@@ -121,10 +125,17 @@ def load_manifest(manifest_path):
         raise PilotError('MANIFEST_SCHEMA', 'Invalid manifest schema; expected exactly source.csv and peaks.csv with consistent metadata') from exc
 
 
+def load_manifest(manifest_path):
+    path = Path(manifest_path)
+    if path.name != 'manifest.json':
+        raise PilotError('MANIFEST_SCHEMA', 'Expected a regular manifest.json file')
+    return _parse_manifest(read_bounded(path, MAX_MANIFEST_BYTES))
+
+
 def import_centroid_csv(input_path, output_root, *, sample_id, instrument_id, operator_id,
                         approved_nonconfidential, acquired_at=None,
                         pilot_id='mild-biotec-initial-ms', dataset_id=None,
-                        mz_units=None, intensity_units=None):
+                        mz_units=None, intensity_units=None, expected_source_sha256=None):
     if approved_nonconfidential is not True:
         raise PilotError('DATA_APPROVAL', 'Explicit approval for nonconfidential pilot data is required')
     run_id = str(uuid.uuid4())
@@ -135,6 +146,8 @@ def import_centroid_csv(input_path, output_root, *, sample_id, instrument_id, op
     except ValidationError as exc:
         raise PilotError('METADATA', str(exc)) from exc
     raw = read_bounded(input_path, MAX_SOURCE_BYTES)
+    if expected_source_sha256 and _sha256(raw) != expected_source_sha256:
+        raise PilotError('SOURCE_CHANGED', 'Source differs from the validated preview; validate it again')
     normalized, count = normalize_centroid_csv(raw)
     out = checked_path(output_root)
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -172,11 +185,14 @@ def import_centroid_csv(input_path, output_root, *, sample_id, instrument_id, op
     return final / 'manifest.json'
 
 
-def verify_centroid_bundle(manifest_path, *, expected_manifest_sha256=None):
+def read_verified_bundle(manifest_path, *, expected_manifest_sha256=None):
     path = Path(manifest_path)
-    if expected_manifest_sha256 and _sha256(read_bounded(path, MAX_MANIFEST_BYTES)) != expected_manifest_sha256:
+    if path.name != 'manifest.json':
+        raise PilotError('MANIFEST_SCHEMA', 'Expected a regular manifest.json file')
+    manifest_raw = read_bounded(path, MAX_MANIFEST_BYTES)
+    if expected_manifest_sha256 and _sha256(manifest_raw) != expected_manifest_sha256:
         raise PilotError('MANIFEST_INTEGRITY', 'Manifest differs from the independently recorded digest')
-    manifest = load_manifest(path)
+    manifest = _parse_manifest(manifest_raw)
     contents = {}
     for entry in manifest['artifacts']:
         payload = read_bounded(path.parent / entry['file'], MAX_SOURCE_BYTES * (1 if entry['file'] == 'source.csv' else 4))
@@ -186,7 +202,13 @@ def verify_centroid_bundle(manifest_path, *, expected_manifest_sha256=None):
     normalized, count = normalize_centroid_csv(contents['source.csv'])
     if normalized != contents['peaks.csv'] or count != manifest['peak_count']:
         raise PilotError('NORMALIZATION_MISMATCH', 'Peak normalization or peak count mismatch')
-    return {'verified': True, 'run_id': manifest['run_id'], 'peak_count': count,
+    contents['manifest.json'] = manifest_raw
+    return manifest, contents, _sha256(manifest_raw)
+
+
+def verify_centroid_bundle(manifest_path, *, expected_manifest_sha256=None):
+    manifest, _, _ = read_verified_bundle(manifest_path, expected_manifest_sha256=expected_manifest_sha256)
+    return {'verified': True, 'run_id': manifest['run_id'], 'peak_count': manifest['peak_count'],
             'epistemic_state': 'UNKNOWN', 'note': 'File integrity only; instrument origin and scientific validity are unverified'}
 
 

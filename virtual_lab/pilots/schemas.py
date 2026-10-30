@@ -81,6 +81,20 @@ class Manifest(AcquisitionMetadata):
     limitations: list[str] = Field(min_length=1, max_length=20)
     artifacts: list[Artifact] = Field(min_length=2, max_length=2)
 
+    @field_validator('schema_version', mode='before')
+    @classmethod
+    def exact_schema_type(cls, value):
+        if type(value) is not int:
+            raise ValueError('Schema version must be an integer')
+        return value
+
+    @field_validator('approved_nonconfidential', mode='before')
+    @classmethod
+    def explicit_approval(cls, value):
+        if value is not True:
+            raise ValueError('Explicit boolean approval is required')
+        return value
+
     @field_validator('created_at_utc')
     @classmethod
     def created(cls, value):
