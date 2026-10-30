@@ -55,9 +55,26 @@ def main() -> None:
     args = parser.parse_args()
     version = runpy.run_path(str(Path(__file__).resolve().parents[1] / "virtual_lab/version.py"))["__version__"]
     counts = summarize_junit(args.junit)
+    if counts['tests_failed'] or counts['tests_errors']:
+        parser.error('Refusing release manifest: test suite contains failures or errors')
+    if counts['tests_passed'] == 0:
+        parser.error('Refusing release manifest: no tests passed')
     wheel = args.wheel.resolve()
     if not wheel.is_file():
         parser.error(f"Wheel not found: {wheel}")
+    import zipfile
+    from email.parser import BytesParser
+    from packaging.version import Version
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            metadata = [name for name in archive.namelist() if name.endswith('.dist-info/METADATA')]
+            if len(metadata) != 1:
+                raise ValueError('Expected exactly one wheel METADATA record')
+            wheel_version = BytesParser().parsebytes(archive.read(metadata[0]))['Version']
+            if Version(wheel_version) != Version(version):
+                raise ValueError('Wheel version does not match the source version')
+    except (ValueError, OSError, zipfile.BadZipFile) as exc:
+        parser.error(str(exc))
     manifest = {
         "version": version,
         "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),

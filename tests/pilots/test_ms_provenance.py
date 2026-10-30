@@ -116,5 +116,6 @@ service.import_csv(source,experiment_id='e',sample_id='s',instrument_id='i',oper
         assert not list((tmp_path/'runs').glob('*/manifest.json'))
         assert len(list((tmp_path/'runs').glob('*/manifest.interrupted.json'))) == 1
     finally:
+        service.close()
         store.close()
         ledger.conn.close()

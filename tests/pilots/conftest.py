@@ -10,6 +10,7 @@ def service(tmp_path):
     store.save_experiment('exp', '', '', '', label='Synthetic MS workflow')
     svc = MSDatasetService(ledger, store, tmp_path/'runs')
     yield svc
+    svc.close()
     store.close()
     ledger.conn.close()
 

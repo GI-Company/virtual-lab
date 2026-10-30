@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QLineEdit, QPushButton, QFileDialog, QCheckBox, QPlainTextEdit, QTabWidget,
-    QListWidget, QListWidgetItem, QSplitter, QComboBox)
+    QListWidget, QListWidgetItem, QSplitter, QComboBox, QGroupBox, QScrollArea)
 import pyqtgraph as pg
 from virtual_lab.core.paths import app_data_dir
 from virtual_lab.pilots.datasets import MSDatasetService
@@ -16,10 +16,10 @@ from virtual_lab.pilots.reporting import spectrum_summary
 
 
 class MSPilotWorkspace(QWidget):
-    def __init__(self, workspace, study_service, parent=None):
+    def __init__(self, workspace, study_service, parent=None, *, lease=None):
         super().__init__(parent)
         self.workspace, self.study_service = workspace, study_service
-        self.service = MSDatasetService(study_service.ledger, study_service.store, app_data_dir()/'ms-pilot-runs')
+        self.service = MSDatasetService(study_service.ledger, study_service.store, app_data_dir()/'ms-pilot-runs', lease=lease)
         self.selected_run = None
         self.validated = None
         layout = QVBoxLayout(self)
@@ -63,6 +63,13 @@ class MSPilotWorkspace(QWidget):
             self.fields[key] = edit
             form.addRow(label, edit)
         self.fields['pilot_id'].setText('mild-biotec-initial-ms')
+        self.data_origin = QComboBox()
+        self.data_origin.addItem('Unspecified', 'unspecified')
+        self.data_origin.addItem('Synthetic example', 'synthetic')
+        self.data_origin.addItem('Public reference peak list (origin unverified)', 'public_reference')
+        self.data_origin.addItem('Laboratory supplied (origin unverified)', 'laboratory_supplied')
+        self.data_origin.currentIndexChanged.connect(self.invalidate_preview)
+        form.addRow('Declared data origin', self.data_origin)
         form_layout.addLayout(form)
         browse = QPushButton('Select CSV file')
         browse.clicked.connect(self.browse)
@@ -70,6 +77,24 @@ class MSPilotWorkspace(QWidget):
         self.approval = QCheckBox('I confirm this dataset is synthetic or approved nonconfidential data permitted for this pilot')
         self.approval.toggled.connect(self.invalidate_preview)
         form_layout.addWidget(self.approval)
+        self.source_group=QGroupBox('Include source attribution (public references)')
+        self.source_group.setCheckable(True)
+        self.source_group.setChecked(False)
+        source_layout=QVBoxLayout(self.source_group)
+        source_content=QWidget()
+        source_form=QFormLayout(source_content)
+        self.source_fields={}
+        for key,label in [('accession','Reference accession'),('url','Primary source URL'),('license','Source license'),('attribution','Source authors / attribution'),('notes','Conversion / source notes')]:
+            field=QLineEdit()
+            field.setAccessibleName(label)
+            field.textChanged.connect(self.invalidate_preview)
+            self.source_fields[key]=field
+            source_form.addRow(label,field)
+        source_content.setVisible(False)
+        self.source_group.toggled.connect(source_content.setVisible)
+        self.source_group.toggled.connect(self.invalidate_preview)
+        source_layout.addWidget(source_content)
+        form_layout.addWidget(self.source_group)
         row = QHBoxLayout()
         self.validate_button = QPushButton('Validate and preview')
         self.validate_button.clicked.connect(self.validate_input)
@@ -80,7 +105,11 @@ class MSPilotWorkspace(QWidget):
         row.addWidget(self.import_button)
         form_layout.addLayout(row)
         form_layout.addStretch()
-        self.tabs.addTab(intake, 'Import')
+        self.import_scroll = QScrollArea()
+        self.import_scroll.setWidgetResizable(True)
+        self.import_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.import_scroll.setWidget(intake)
+        self.tabs.addTab(self.import_scroll, 'Import')
         spectrum = QWidget()
         spectrum_layout = QVBoxLayout(spectrum)
         self.plot = pg.PlotWidget()
@@ -128,12 +157,15 @@ class MSPilotWorkspace(QWidget):
         provenance_layout.addWidget(review_button)
         self.tabs.addTab(provenance, 'Provenance / review')
         actions = QHBoxLayout()
-        for label, handler in [('Verify integrity', self.verify), ('Compare repeat processing', self.reprocess),
+        for label, handler in [('Verify integrity', self.verify), ('Compare repeat processing', self.reprocess), ('Test alteration detection', self.test_alteration),
                                ('Export JSON / PDF report', self.export)]:
             button = QPushButton(label)
             button.clicked.connect(handler)
             actions.addWidget(button)
         right_layout.addLayout(actions)
+        verify_exports=QPushButton('Verify exported PDF / JSON checksums')
+        verify_exports.clicked.connect(self.verify_exports)
+        right_layout.addWidget(verify_exports)
         self.status = QLabel('Select a CSV and enter metadata to begin. CSV previews are limited to the first 16 KiB.')
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.PlainText)
@@ -153,6 +185,9 @@ class MSPilotWorkspace(QWidget):
         fields = {key: edit.text().strip() for key, edit in self.fields.items() if key != 'source'}
         for key in ('acquired_at','mz_units','intensity_units'):
             fields[key] = fields[key] or None
+        fields['data_origin'] = self.data_origin.currentData()
+        if self.source_group.isChecked():
+            fields['source_reference'] = {key:edit.text().strip() for key,edit in self.source_fields.items()}
         AcquisitionMetadata(**{('acquired_at_utc' if key == 'acquired_at' else key): value for key,value in fields.items()})
         return {**fields, 'approved_nonconfidential': self.approval.isChecked()}
 
@@ -162,7 +197,7 @@ class MSPilotWorkspace(QWidget):
             self.fields['source'].setText(path)
 
     def show_spectrum(self, raw, normalized, units=None):
-        peaks = parse_centroids(normalized)
+        peaks = parse_centroids(normalized, normalized=True)
         x, y = [float(p[0]) for p in peaks], [float(p[1]) for p in peaks]
         self.plot.clear()
         # Centroid sticks preserve every input point, including repeated m/z values.
@@ -269,12 +304,30 @@ class MSPilotWorkspace(QWidget):
         except Exception as exc:
             self.fail(exc)
 
+    def test_alteration(self):
+        try:
+            result = self.service.test_alteration(self.selected_run)
+            self.history.setPlainText(json.dumps(self.service.events(self.selected_run), indent=2))
+            self.status.setText('Alteration check: ' + ('PASS; altered copy rejected, original preserved' if result['detected'] else 'FAIL; alteration not detected'))
+        except Exception as exc:
+            self.fail(exc)
+
     def review(self):
         try:
             self.service.review(self.selected_run, reviewer=self.reviewer.text().strip(), approved=self.decision.currentIndex()==0,
                                 note=self.review_note.text().strip())
             self.history.setPlainText(json.dumps(self.service.events(self.selected_run), indent=2))
             self.status.setText('Workflow review recorded. Evidence remains UNKNOWN.')
+        except Exception as exc:
+            self.fail(exc)
+
+    def verify_exports(self):
+        try:
+            from virtual_lab.pilots.reporting import verify_report_files
+            path,_=QFileDialog.getOpenFileName(self,'Verify report checksums','','SHA-256 checksums (*.sha256)')
+            if path:
+                result=verify_report_files(path)
+                self.status.setText('Report verification PASS: '+', '.join(result['files'])+'. '+result['scope'])
         except Exception as exc:
             self.fail(exc)
 
@@ -285,6 +338,6 @@ class MSPilotWorkspace(QWidget):
                                                  'JSON report (*.json);;PDF report (*.pdf)')
             if path:
                 self.service.export_report(self.selected_run, path)
-                self.status.setText('Report exported. Transfer it only through an agreed channel.')
+                self.status.setText('Report exported' + (' with companion JSON and SHA-256 checksums.' if Path(path).suffix == '.pdf' else ' with SHA-256 checksums.') + ' Transfer only through an agreed channel.')
         except Exception as exc:
             self.fail(exc)

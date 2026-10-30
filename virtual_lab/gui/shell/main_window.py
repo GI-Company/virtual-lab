@@ -21,6 +21,22 @@ from virtual_lab.gui.shell.layout import make_workspace_scrollable
 class VirtualLabApplication(QMainWindow):
     def __init__(self):
         super().__init__()
+        from virtual_lab.core.paths import app_data_dir
+        from virtual_lab.pilots.lease import WorkspaceLease
+        self._workspace_lease = WorkspaceLease(app_data_dir())
+        lease = self._workspace_lease
+        self.destroyed.connect(lambda: lease.close())
+        try:
+            self._initialize()
+        except BaseException:
+            if hasattr(self, 'projects'):
+                self.projects.service.store.close()
+            if hasattr(self, 'runtime'):
+                self.runtime.shutdown()
+            lease.close()
+            raise
+
+    def _initialize(self):
         # Destroy child WebEngine pages before QApplication releases its profile.
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle(f"VirtualLab v{__version__} - Scientific Cockpit")
@@ -196,7 +212,7 @@ class VirtualLabApplication(QMainWindow):
         from virtual_lab.gui.biological_workspace import BiologicalWorkspace
         self.biological = BiologicalWorkspace(self.workspace, self.projects.service)
         from virtual_lab.gui.ms_pilot_workspace import MSPilotWorkspace
-        self.ms_pilot = MSPilotWorkspace(self.workspace, self.projects.service)
+        self.ms_pilot = MSPilotWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
         self.tabs.addTab(self.projects, "Projects")
         self.tabs.addTab(self.ms_pilot, "MS Workflow")
         self.tabs.addTab(self.biological, "Biological objects")
@@ -459,6 +475,7 @@ class VirtualLabApplication(QMainWindow):
                 self.instruments.thread_pool.waitForDone(2000)
             self.projects.service.store.close()
             self.runtime.shutdown()
+            self._workspace_lease.close()
             event.accept()
 
 

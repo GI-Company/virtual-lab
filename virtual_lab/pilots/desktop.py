@@ -13,6 +13,21 @@ from virtual_lab.gui.shell.layout import make_workspace_scrollable
 class MSPilotWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        from virtual_lab.pilots.lease import WorkspaceLease
+        self._workspace_lease = WorkspaceLease(app_data_dir())
+        lease = self._workspace_lease
+        self.destroyed.connect(lambda: lease.close())
+        try:
+            self._initialize()
+        except BaseException:
+            if hasattr(self, 'projects'):
+                self.projects.service.store.close()
+            if hasattr(self, 'ledger'):
+                self.ledger.conn.close()
+            lease.close()
+            raise
+
+    def _initialize(self):
         self.setWindowTitle('VirtualLab | MS Workflow Pilot | Local')
         self.resize(1280, 900)
         self.setMinimumSize(800, 600)
@@ -22,7 +37,7 @@ class MSPilotWindow(QMainWindow):
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.ledger = GenesisLedger(str(root/'genesis.db'))
         self.projects = ProjectsWorkspace(self.workspace, self.ledger)
-        self.ms_pilot = MSPilotWorkspace(self.workspace, self.projects.service)
+        self.ms_pilot = MSPilotWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
         self.tabs = QTabWidget()
         self.tabs.addTab(self.projects, 'Projects')
         self.tabs.addTab(self.ms_pilot, 'MS Workflow')
@@ -33,6 +48,7 @@ class MSPilotWindow(QMainWindow):
     def closeEvent(self, event):
         self.projects.service.store.close()
         self.ledger.conn.close()
+        self._workspace_lease.close()
         super().closeEvent(event)
 
 

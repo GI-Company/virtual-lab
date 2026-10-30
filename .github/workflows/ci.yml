@@ -67,9 +67,26 @@ jobs:
       - run: uv sync --locked --extra cockpit --extra pilot --extra dev
       - run: uv run --no-sync python -m pytest tests/pilots tests/gui/test_ms_pilot_workspace.py -q
 
+  security:
+    name: Locked runtime dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install uv==0.13.6
+      - run: uv export --locked --extra cockpit --extra pilot --no-emit-project --no-dev --output-file runtime-requirements.txt
+      - run: uv tool run --python 3.12 --from pip-audit==2.10.1 pip-audit --disable-pip --no-deps --require-hashes --strict --requirement runtime-requirements.txt --format json --output dependency-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-dependency-audit
+          path: dependency-audit.json
+
   build:
     name: Reproducible pilot wheel and manifest
-    needs: [core, ai-compatibility, desktop-smoke]
+    needs: [core, ai-compatibility, desktop-smoke, security]
     runs-on: ubuntu-latest
     env:
       SOURCE_DATE_EPOCH: '1793232000'
@@ -85,6 +102,16 @@ jobs:
           uv build --no-build-isolation --out-dir output/build-a
           uv build --no-build-isolation --out-dir output/build-b
           uv run --no-sync python scripts/verify_pilot_release.py output/build-a output/build-b
+      - name: Verify clean non-editable wheel installation without AI
+        env:
+          QT_QPA_PLATFORM: offscreen
+          VIRTUALLAB_DATA_DIR: ${{ github.workspace }}/output/installed-data
+        run: |
+          uv export --locked --extra cockpit --extra pilot --no-emit-project --no-dev --output-file output/runtime-requirements.txt
+          uv venv --python 3.12 output/wheel-env
+          uv pip sync --python output/wheel-env/bin/python --require-hashes output/runtime-requirements.txt
+          uv pip install --python output/wheel-env/bin/python --no-deps "$(find output/build-a -maxdepth 1 -name '*.whl' -print -quit)"
+          output/wheel-env/bin/python scripts/verify_installed_pilot.py --output output/build-a/installed-wheel-smoke.json
       - uses: actions/download-artifact@v4
         with:
           name: junit-python-3.12

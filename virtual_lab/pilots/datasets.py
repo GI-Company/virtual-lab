@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import uuid
+import weakref
 
 from virtual_lab.core.ledger import Actor
 from virtual_lab.domain.epistemics import EpistemicState
@@ -25,15 +26,37 @@ class MSDatasetService:
     imports lose their query-store observations and receive a failed event.
     Historical ledger events are preserved. No cloud/AI provider is used.
     """
-    def __init__(self, ledger, store, root):
+    def __init__(self, ledger, store, root, *, lease=None):
+        from virtual_lab.pilots.lease import WorkspaceLease
+        if ledger.db_path == ':memory:':
+            raise PilotError('PERSISTENT_LEDGER_REQUIRED', 'MS pilot datasets require a persistent local ledger')
+        directory = checked_path(Path(ledger.db_path).parent)
+        if lease is not None and (not lease.active or lease.directory != directory):
+            raise PilotError('WORKSPACE_OWNERSHIP', 'The writer lock must cover the active ledger directory')
+        self.lease = lease or WorkspaceLease(directory)
+        self._owns_lease = lease is None
+        self._lease_finalizer = weakref.finalize(self, self.lease.close) if self._owns_lease else None
         self.ledger, self.store = ledger, store
-        self.root = checked_path(root)
-        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if os.name != 'nt':
-            self.root.chmod(0o700)
-        self.recover()
+        try:
+            self.root = checked_path(root)
+            self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if os.name != 'nt':
+                self.root.chmod(0o700)
+            self.recover()
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        if self._lease_finalizer is not None:
+            self._lease_finalizer()
+
+    def _require_writer(self):
+        if not self.lease.active:
+            raise PilotError('WORKSPACE_CLOSED', 'The local workspace is closed')
 
     def _event(self, kind, payload, actor='local-researcher'):
+        self._require_writer()
         return self.ledger.append(str(uuid.uuid4()), Actor(type='USER', id=actor), kind, payload)
 
     def events(self, run_id=None):
@@ -46,6 +69,7 @@ class MSDatasetService:
         return result
 
     def recover(self):
+        self._require_writer()
         events = self.events()
         pending = {e['payload']['run_id']: e['payload'] for e in events if e['event_type'] == 'MS_DATASET_REGISTERED'}
         for event in events:
@@ -96,6 +120,7 @@ class MSDatasetService:
         return Path(self._record(run_id)['artifact_path'])
 
     def read(self, run_id):
+        self._require_writer()
         record = self._record(run_id)
         snapshot = read_verified_bundle(record['artifact_path'], expected_manifest_sha256=record['manifest_sha256'])
         if snapshot[0]['run_id'] != run_id:
@@ -108,6 +133,7 @@ class MSDatasetService:
             'epistemic_state':'UNKNOWN', 'note':'File integrity verified; instrument origin and scientific validity remain unverified'}
 
     def import_csv(self, source, *, experiment_id, **metadata):
+        self._require_writer()
         if self.store.get_experiment(experiment_id) is None:
             raise PilotError('EXPERIMENT_REQUIRED', 'Create and select an experiment in Projects first')
         existing = [p for p in self.runs() if p['pilot_id'] == metadata.get('pilot_id', 'mild-biotec-initial-ms')]
@@ -165,6 +191,28 @@ class MSDatasetService:
         self._event('MS_DATASET_REPROCESSED', result)
         return result
 
+    def test_alteration(self, run_id):
+        """Challenge an isolated copy, never the researcher's preserved source."""
+        import tempfile
+        from virtual_lab.pilots.storage import write_private
+        _, contents, pin = self.read(run_id)
+        detected, code = False, None
+        with tempfile.TemporaryDirectory(prefix='.ms-alteration-', dir=self.root) as temporary:
+            target = Path(temporary)
+            for name, raw in contents.items():
+                write_private(target/name, (b'X' + raw[1:]) if name == 'source.csv' else raw)
+            try:
+                verify_centroid_bundle(target/'manifest.json', expected_manifest_sha256=pin)
+            except PilotError as exc:
+                code = exc.code
+                detected = code == 'ARTIFACT_INTEGRITY'
+        self.read(run_id)
+        result = {'run_id':run_id, 'detected':detected, 'error_code':code,
+            'altered_artifact':'source.csv', 'method':'Isolated copy; first-byte mutation',
+            'original_unchanged':True, 'manifest_sha256':pin}
+        self._event('MS_INTEGRITY_CHALLENGE', result)
+        return result
+
     def review(self, run_id, *, reviewer, approved, note):
         from virtual_lab.pilots.schemas import AcquisitionMetadata
         self.verify(run_id)
@@ -176,10 +224,21 @@ class MSDatasetService:
             'approved': approved, 'note': note, 'epistemic_state': 'UNKNOWN'}, actor=reviewer)
 
     def export_report(self, run_id, destination):
-        from virtual_lab.pilots.reporting import build_report, export_report
+        from virtual_lab.pilots.reporting import build_report, export_snapshot
         self.verify(run_id)
-        report = build_report(self.manifest_path(run_id), self.events(run_id), expected_manifest_sha256=self._record(run_id)['manifest_sha256'])
-        destination = export_report(report, destination)
-        self._event('MS_DATASET_EXPORTED', {'run_id': run_id, 'report_sha256': _sha256(read_bounded(destination, 16*1024*1024)),
-            'format': destination.suffix, 'manifest_sha256': self._record(run_id)['manifest_sha256']})
+        pin = self._record(run_id)['manifest_sha256']
+        report = build_report(self.manifest_path(run_id), self.events(run_id), expected_manifest_sha256=pin)
+        published = export_snapshot(report, destination)
+        destination = Path(destination)
+        try:
+            payload = {'run_id':run_id, 'format':destination.suffix, 'manifest_sha256':pin,
+                'report_sha256':_sha256(read_bounded(destination, 16*1024*1024)),
+                'checksum_file_sha256':_sha256(read_bounded(destination.with_suffix('.sha256'),16384))}
+            if destination.suffix == '.pdf':
+                payload['supporting_json_sha256'] = _sha256(read_bounded(destination.with_suffix('.json'), 16*1024*1024))
+            self._event('MS_DATASET_EXPORTED', payload)
+        except BaseException:
+            for path in published:
+                path.unlink(missing_ok=True)
+            raise
         return destination

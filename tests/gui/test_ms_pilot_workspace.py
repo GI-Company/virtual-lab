@@ -60,6 +60,7 @@ def test_pilot_window_import_review_export_and_reopen(qtbot, tmp_path, monkeypat
     imported_service = MSDatasetService(ledger, store, recipient_root/'ms-pilot-runs')
     assert imported_service.runs(experiment)[0]['run_id'] == imported[0].session_id
     assert imported_service.verify(imported[0].session_id)['verified']
+    imported_service.close()
     store.close()
     ledger.conn.close()
     window.close()
@@ -90,3 +91,36 @@ print('OFFLINE_PILOT_OK')
         QT_QPA_PLATFORM='offscreen', VIRTUALLAB_DATA_DIR=str(tmp_path/'offline')), capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'OFFLINE_PILOT_OK' in result.stdout
+
+
+def test_second_window_is_blocked_before_opening_databases(qtbot, monkeypatch):
+    import pytest
+    from virtual_lab.pilots.desktop import MSPilotWindow
+    from virtual_lab.pilots.schemas import PilotError
+    from virtual_lab.gui.shell import main_window
+    first=MSPilotWindow()
+    qtbot.addWidget(first)
+    def unexpected_runtime():
+        raise AssertionError('Second window touched the runtime before acquiring the lease')
+    monkeypatch.setattr(main_window,'create_virtual_lab_runtime',unexpected_runtime)
+    with pytest.raises(PilotError) as error:
+        main_window.VirtualLabApplication()
+    assert error.value.code=='WORKSPACE_BUSY'
+    first.close()
+    reopened=MSPilotWindow()
+    qtbot.addWidget(reopened)
+    reopened.close()
+
+
+def test_failed_window_start_releases_lease(monkeypatch):
+    import pytest
+    from virtual_lab.pilots.desktop import MSPilotWindow
+    from virtual_lab.pilots.lease import WorkspaceLease
+    from virtual_lab.core.paths import app_data_dir
+    def failed_start(self):
+        raise RuntimeError('simulated startup failure')
+    monkeypatch.setattr(MSPilotWindow,'_initialize',failed_start)
+    with pytest.raises(RuntimeError,match='startup failure'):
+        MSPilotWindow()
+    with WorkspaceLease(app_data_dir()):
+        pass
