@@ -1,217 +1,247 @@
-"""Conservative MS centroid-list intake for nonconfidential workflow pilots.
-
-This module validates an interchange CSV and hashes its bytes. It does NOT
-identify proteins, calibrate instruments, interpret MS/MS, or establish the
-origin or scientific validity of the submitted measurements.
-"""
+"""Bounded, deterministic intake for approved nonconfidential centroid peak lists."""
 from __future__ import annotations
-
 import argparse
 import csv
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import io
 import json
-import math
 from pathlib import Path
 import re
 import shutil
 import tempfile
 import uuid
+from pydantic import ValidationError
+from virtual_lab.version import __version__
+from virtual_lab.pilots.schemas import (AcquisitionMetadata, Manifest, PilotError,
+    MAX_SOURCE_BYTES, MAX_PEAKS, MAX_MANIFEST_BYTES, PROCESSING_VERSION)
+from virtual_lab.pilots.storage import checked_path, read_bounded, write_private
 
-MAX_SOURCE_BYTES = 16 * 1024 * 1024
-MAX_PEAKS = 100_000
-SCHEMA_VERSION = 1
-FIELDS = ("mz", "intensity")
-IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
+SCHEMA_VERSION = 2
+FIELDS = ('mz', 'intensity')
+NUMBER = re.compile(r'^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$')
+LIMITATIONS = [
+    'No identity, purity, fragmentation, calibration, or protein structural claims',
+    'Checksums alone do not authenticate instrument origin or scientific validity',
+    'Imported evidence remains UNKNOWN, including after workflow approval',
+    'Exact decimal normalization sorts by m/z then intensity; duplicates are preserved',
+]
 
 
-def _sha256(content: bytes) -> str:
+def _sha256(content):
     return hashlib.sha256(content).hexdigest()
 
 
-def _identifier(value: str, field: str) -> str:
-    if not isinstance(value, str) or not IDENTIFIER.fullmatch(value):
-        raise ValueError(f"{field} must use 1–80 letters, digits, dots, underscores or hyphens")
-    return value
+def json_bytes(value):
+    return (json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + '\n').encode('utf-8')
 
 
-def _timestamp(value: str | None) -> str | None:
-    if value is None:
-        return None
+def _decimal(value, line):
+    if len(value) > 128 or not NUMBER.fullmatch(value):
+        raise PilotError('INVALID_NUMBER', f'CSV row {line} contains an invalid numeric value')
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("acquired_at must be an ISO 8601 timestamp with timezone") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValueError("acquired_at requires timezone information")
-    return parsed.astimezone(timezone.utc).isoformat()
+        result = Decimal(value)
+    except InvalidOperation as exc:
+        raise PilotError('INVALID_NUMBER', f'CSV row {line} contains an invalid numeric value') from exc
+    # Bound decimal expansion, plotting range and aggregate memory use explicitly.
+    if not result.is_finite() or (result and not -100 <= result.adjusted() <= 100):
+        raise PilotError('NUMERIC_RANGE', f'CSV row {line} exceeds supported numeric range (1e-100 to <1e101)')
+    digits = ''.join(str(d) for d in result.as_tuple().digits).rstrip('0')
+    if len(digits) > 100:
+        raise PilotError('NUMERIC_PRECISION', f'CSV row {line} exceeds 100 significant digits')
+    return result
 
 
-def normalize_centroid_csv(source: bytes) -> tuple[bytes, int]:
-    """Parse exact mz,intensity CSV fields and emit deterministic sorted peaks.
+def canonical_decimal(value):
+    if value == 0:
+        return '0'
+    text = format(value, 'f')
+    fixed = text.rstrip('0').rstrip('.') if '.' in text else text
+    if len(fixed) <= 128:
+        return fixed
+    digits = ''.join(str(d) for d in value.as_tuple().digits).rstrip('0')
+    mantissa = digits[0] + ('.' + digits[1:] if len(digits) > 1 else '')
+    return ('-' if value < 0 else '') + mantissa + 'e' + str(value.adjusted())
 
-    Duplicate m/z values are preserved because they may represent distinct
-    centroids. No peak filtering, recalibration or intensity normalization occurs.
-    """
+
+def parse_centroids(source):
     if not source or len(source) > MAX_SOURCE_BYTES:
-        raise ValueError("CSV must be nonempty and at most 16 MiB")
+        raise PilotError('SIZE_LIMIT', 'CSV must be nonempty and at most 16 MiB')
     try:
-        text = source.decode("utf-8-sig")
+        text = source.decode('utf-8-sig')
     except UnicodeDecodeError as exc:
-        raise ValueError("CSV must be UTF-8 encoded") from exc
-    reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
-    if reader.fieldnames is None or tuple(reader.fieldnames) != FIELDS:
-        raise ValueError("CSV header must be exactly: mz,intensity")
-    peaks: list[tuple[float, float]] = []
+        raise PilotError('ENCODING', 'CSV must be UTF-8 encoded') from exc
+    reader = csv.reader(io.StringIO(text, newline=''), strict=True)
+    peaks = []
     try:
-        for line, row in enumerate(reader, start=2):
+        if next(reader, None) != list(FIELDS):
+            raise PilotError('HEADER', 'CSV header must be exactly: mz,intensity')
+        for row in reader:
             if len(peaks) >= MAX_PEAKS:
-                raise ValueError(f"CSV exceeds {MAX_PEAKS} peak rows")
-            if None in row or any(row[field] is None for field in FIELDS):
-                raise ValueError(f"CSV row {line} must contain exactly two values")
-            try:
-                mz = float(row["mz"])
-                intensity = float(row["intensity"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"CSV row {line} has nonnumeric values") from exc
-            if not (math.isfinite(mz) and mz > 0 and math.isfinite(intensity) and intensity >= 0):
-                raise ValueError(f"CSV row {line} requires finite mz > 0 and intensity >= 0")
+                raise PilotError('ROW_LIMIT', f'CSV exceeds {MAX_PEAKS} peak rows')
+            if len(row) != 2:
+                raise PilotError('ROW_SCHEMA', f'CSV row {reader.line_num} must contain exactly two values')
+            mz, intensity = (_decimal(v, reader.line_num) for v in row)
+            if mz <= 0 or intensity < 0:
+                raise PilotError('NUMERIC_RANGE', f'CSV row {reader.line_num} requires mz > 0 and intensity >= 0')
             peaks.append((mz, intensity))
     except csv.Error as exc:
-        raise ValueError(f"Malformed CSV: {exc}") from exc
+        raise PilotError('MALFORMED_CSV', 'Malformed CSV syntax or oversized field') from exc
     if not peaks:
-        raise ValueError("CSV must contain at least one peak")
-    writer_buf = io.StringIO(newline="")
-    writer = csv.writer(writer_buf, lineterminator="\n")
+        raise PilotError('NO_PEAKS', 'CSV must contain at least one peak')
+    return peaks
+
+
+def normalize_centroid_csv(source):
+    peaks = parse_centroids(source)
+    output = io.StringIO(newline='')
+    writer = csv.writer(output, lineterminator='\n')
     writer.writerow(FIELDS)
     for mz, intensity in sorted(peaks):
-        writer.writerow((format(mz, ".17g"), format(intensity, ".17g")))
-    return writer_buf.getvalue().encode("utf-8"), len(peaks)
+        writer.writerow((canonical_decimal(mz), canonical_decimal(intensity)))
+    return output.getvalue().encode('utf-8'), len(peaks)
 
 
-def import_centroid_csv(
-    input_path: Path | str,
-    output_root: Path | str,
-    *,
-    sample_id: str,
-    instrument_id: str,
-    operator_id: str,
-    approved_nonconfidential: bool,
-    acquired_at: str | None = None,
-) -> Path:
-    """Create an immutable-on-success intake directory with a hash manifest.
-
-    Caller must confirm that the source is approved for this nonconfidential
-    pilot. No network transmission or research inference is performed.
-    """
-    if approved_nonconfidential is not True:
-        raise ValueError("Explicit approval for nonconfidential pilot data is required")
-    sample_id = _identifier(sample_id, "sample_id")
-    instrument_id = _identifier(instrument_id, "instrument_id")
-    operator_id = _identifier(operator_id, "operator_id")
-    acquisition = _timestamp(acquired_at)
-    input_path = Path(input_path)
-    if input_path.is_symlink() or not input_path.is_file():
-        raise ValueError("Input must be a regular non-symlink CSV file")
-    if input_path.stat().st_size > MAX_SOURCE_BYTES:
-        raise ValueError("CSV exceeds 16 MiB")
-    raw = input_path.read_bytes()
-    normalized, peak_count = normalize_centroid_csv(raw)
-    out = Path(output_root)
-    out.mkdir(parents=True, exist_ok=True)
-    run_id = str(uuid.uuid4())
-    temp = Path(tempfile.mkdtemp(prefix=".ms-intake-", dir=out))
-    final = out / run_id
+def _parse_manifest(raw):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('Duplicate JSON key')
+            result[key] = value
+        return result
     try:
-        (temp / "source.csv").write_bytes(raw)
-        (temp / "peaks.csv").write_bytes(normalized)
-        manifest = {
-            "schema_version": SCHEMA_VERSION,
-            "run_id": run_id,
-            "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "sample_id": sample_id,
-            "instrument_id": instrument_id,
-            "operator_id": operator_id,
-            "acquired_at_utc": acquisition,
-            "data_kind": "centroid_peak_list",
-            "epistemic_state": "UNKNOWN",
-            "epistemic_note": "Imported file provenance not independently established; centroid values may be processed instrument outputs.",
-            "input_format": "strict_csv_mz_intensity_v1",
-            "peak_count": peak_count,
-            "units": {"mz": "m/z", "intensity": "source units (unverified)"},
-            "artifacts": [
-                {"file": "source.csv", "sha256": _sha256(raw), "size_bytes": len(raw)},
-                {"file": "peaks.csv", "sha256": _sha256(normalized), "size_bytes": len(normalized)},
-            ],
-            "limitations": [
-                "No identity, purity, fragmentation, calibration, or protein structural claims",
-                "Hashes detect changes relative to this manifest but are not digital signatures",
-                "Scientific provenance and permitted data use require independent review",
-            ],
-        }
-        (temp / "manifest.json").write_text(
-            json.dumps(manifest, sort_keys=True, indent=2, allow_nan=False) + "\n", encoding="utf-8"
-        )
+        parsed = Manifest.model_validate(json.loads(raw, object_pairs_hook=unique))
+        manifest = parsed.model_dump()
+        for entry in manifest['artifacts']:
+            expected = manifest['source_sha256' if entry['file'] == 'source.csv' else 'normalized_sha256']
+            if expected != entry['sha256']:
+                raise ValueError('Conflicting artifact hashes')
+        return manifest
+    except (ValidationError, ValueError, UnicodeError) as exc:
+        if isinstance(exc, PilotError):
+            raise
+        raise PilotError('MANIFEST_SCHEMA', 'Invalid manifest schema; expected exactly source.csv and peaks.csv with consistent metadata') from exc
+
+
+def load_manifest(manifest_path):
+    path = Path(manifest_path)
+    if path.name != 'manifest.json':
+        raise PilotError('MANIFEST_SCHEMA', 'Expected a regular manifest.json file')
+    return _parse_manifest(read_bounded(path, MAX_MANIFEST_BYTES))
+
+
+def import_centroid_csv(input_path, output_root, *, sample_id, instrument_id, operator_id,
+                        approved_nonconfidential, acquired_at=None,
+                        pilot_id='mild-biotec-initial-ms', dataset_id=None,
+                        mz_units=None, intensity_units=None, expected_source_sha256=None):
+    if approved_nonconfidential is not True:
+        raise PilotError('DATA_APPROVAL', 'Explicit approval for nonconfidential pilot data is required')
+    run_id = str(uuid.uuid4())
+    try:
+        metadata = AcquisitionMetadata(pilot_id=pilot_id, dataset_id=dataset_id or run_id,
+            sample_id=sample_id, instrument_id=instrument_id, operator_id=operator_id,
+            acquired_at_utc=acquired_at, mz_units=mz_units, intensity_units=intensity_units)
+    except ValidationError as exc:
+        raise PilotError('METADATA', str(exc)) from exc
+    raw = read_bounded(input_path, MAX_SOURCE_BYTES)
+    if expected_source_sha256 and _sha256(raw) != expected_source_sha256:
+        raise PilotError('SOURCE_CHANGED', 'Source differs from the validated preview; validate it again')
+    normalized, count = normalize_centroid_csv(raw)
+    out = checked_path(output_root)
+    out.mkdir(parents=True, exist_ok=True, mode=0o700)
+    duplicate_of = []
+    # Only complete valid runs count as previous imports. Never silently discard duplicates.
+    for previous in out.glob('*/manifest.json'):
+        old = load_manifest(previous)
+        if old['source_sha256'] == _sha256(raw):
+            duplicate_of.append(old['run_id'])
+    warnings = ['Instrument origin, calibration and scientific validity are unverified']
+    if mz_units is None or intensity_units is None:
+        warnings.append('Unspecified units have been preserved as null')
+    if duplicate_of:
+        warnings.append('Identical source bytes were previously imported; this is a separate run')
+    manifest = Manifest(schema_version=2, **metadata.model_dump(), run_id=run_id,
+        created_at_utc=datetime.now(timezone.utc).isoformat(), source_filename=Path(input_path).name,
+        data_kind='centroid_peak_list', epistemic_state='UNKNOWN', import_status='accepted',
+        input_format='strict_csv_mz_intensity_v1', processing_version=PROCESSING_VERSION,
+        software_version=__version__, peak_count=count, source_sha256=_sha256(raw),
+        normalized_sha256=_sha256(normalized), approved_nonconfidential=True,
+        duplicate_of=duplicate_of, warnings=warnings, limitations=LIMITATIONS,
+        artifacts=[{'file': name, 'sha256': _sha256(content), 'size_bytes': len(content)}
+                   for name, content in [('source.csv', raw), ('peaks.csv', normalized)]]).model_dump()
+    temp = Path(tempfile.mkdtemp(prefix='.ms-intake-', dir=out))
+    try:
+        write_private(temp / 'source.csv', raw)
+        write_private(temp / 'peaks.csv', normalized)
+        write_private(temp / 'manifest.json', json_bytes(manifest))
+        verify_centroid_bundle(temp / 'manifest.json')
+        final = out / run_id
         temp.rename(final)
     except BaseException:
         shutil.rmtree(temp, ignore_errors=True)
         raise
-    return final / "manifest.json"
+    return final / 'manifest.json'
 
 
-def verify_centroid_bundle(manifest_path: Path | str) -> dict:
-    """Verify artifacts against manifest hashes; never certify measurement origin."""
-    manifest_path = Path(manifest_path)
-    if manifest_path.is_symlink() or manifest_path.name != "manifest.json":
-        raise ValueError("Expected a regular manifest.json file")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != SCHEMA_VERSION or manifest.get("data_kind") != "centroid_peak_list":
-        raise ValueError("Unsupported MS intake bundle version or data kind")
-    entries = manifest.get("artifacts")
-    if not isinstance(entries, list) or {e.get("file") for e in entries if isinstance(e, dict)} != {"source.csv", "peaks.csv"} or len(entries) != 2:
-        raise ValueError("Manifest must contain exactly source.csv and peaks.csv")
-    contents: dict[str, bytes] = {}
-    for entry in entries:
-        path = manifest_path.parent / entry["file"]
-        if path.is_symlink() or not path.is_file():
-            raise ValueError("Missing or linked artifact")
-        contents[entry["file"]] = payload = path.read_bytes()
-        if len(payload) != entry["size_bytes"] or _sha256(payload) != entry["sha256"]:
-            raise ValueError(f"Artifact integrity mismatch: {entry['file']}")
-    normalized, count = normalize_centroid_csv(contents["source.csv"])
-    if normalized != contents["peaks.csv"] or count != manifest.get("peak_count"):
-        raise ValueError("Peak normalization or peak count mismatch")
-    return {"verified": True, "run_id": manifest["run_id"], "peak_count": count,
-            "epistemic_state": manifest.get("epistemic_state", "UNKNOWN"),
-            "note": "File integrity only; instrument origin and scientific validity are unverified"}
+def read_verified_bundle(manifest_path, *, expected_manifest_sha256=None):
+    path = Path(manifest_path)
+    if path.name != 'manifest.json':
+        raise PilotError('MANIFEST_SCHEMA', 'Expected a regular manifest.json file')
+    manifest_raw = read_bounded(path, MAX_MANIFEST_BYTES)
+    if expected_manifest_sha256 and _sha256(manifest_raw) != expected_manifest_sha256:
+        raise PilotError('MANIFEST_INTEGRITY', 'Manifest differs from the independently recorded digest')
+    manifest = _parse_manifest(manifest_raw)
+    contents = {}
+    for entry in manifest['artifacts']:
+        payload = read_bounded(path.parent / entry['file'], MAX_SOURCE_BYTES * (1 if entry['file'] == 'source.csv' else 4))
+        if len(payload) != entry['size_bytes'] or _sha256(payload) != entry['sha256']:
+            raise PilotError('ARTIFACT_INTEGRITY', f"Artifact integrity mismatch: {entry['file']}")
+        contents[entry['file']] = payload
+    normalized, count = normalize_centroid_csv(contents['source.csv'])
+    if normalized != contents['peaks.csv'] or count != manifest['peak_count']:
+        raise PilotError('NORMALIZATION_MISMATCH', 'Peak normalization or peak count mismatch')
+    contents['manifest.json'] = manifest_raw
+    return manifest, contents, _sha256(manifest_raw)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Nonconfidential MS centroid pilot intake")
-    commands = parser.add_subparsers(dest="command", required=True)
-    ingest = commands.add_parser("import", help="Import strict mz,intensity CSV")
-    ingest.add_argument("input", type=Path)
-    ingest.add_argument("--output-root", type=Path, required=True)
-    ingest.add_argument("--sample-id", required=True)
-    ingest.add_argument("--instrument-id", required=True)
-    ingest.add_argument("--operator-id", required=True)
-    ingest.add_argument("--acquired-at")
-    ingest.add_argument("--approved-nonconfidential", action="store_true")
-    verify = commands.add_parser("verify", help="Verify intake bundle file integrity")
-    verify.add_argument("manifest", type=Path)
+def verify_centroid_bundle(manifest_path, *, expected_manifest_sha256=None):
+    manifest, _, _ = read_verified_bundle(manifest_path, expected_manifest_sha256=expected_manifest_sha256)
+    return {'verified': True, 'run_id': manifest['run_id'], 'peak_count': manifest['peak_count'],
+            'epistemic_state': 'UNKNOWN', 'note': 'File integrity only; instrument origin and scientific validity are unverified'}
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Nonconfidential MS centroid pilot intake')
+    commands = parser.add_subparsers(dest='command', required=True)
+    ingest = commands.add_parser('import')
+    ingest.add_argument('input', type=Path)
+    ingest.add_argument('--output-root', type=Path, required=True)
+    for field in ('sample-id', 'instrument-id', 'operator-id'):
+        ingest.add_argument('--' + field, required=True)
+    for field in ('pilot-id', 'dataset-id', 'acquired-at', 'mz-units', 'intensity-units'):
+        ingest.add_argument('--' + field)
+    ingest.add_argument('--approved-nonconfidential', action='store_true')
+    verify = commands.add_parser('verify')
+    verify.add_argument('manifest', type=Path)
     args = parser.parse_args()
-    if args.command == "import":
-        manifest = import_centroid_csv(
-            args.input, args.output_root, sample_id=args.sample_id,
-            instrument_id=args.instrument_id, operator_id=args.operator_id,
-            acquired_at=args.acquired_at, approved_nonconfidential=args.approved_nonconfidential,
-        )
-        result = {"manifest": str(manifest), **verify_centroid_bundle(manifest)}
-    else:
-        result = verify_centroid_bundle(args.manifest)
-    print(json.dumps(result, indent=2, sort_keys=True))
+    try:
+        if args.command == 'import':
+            fields = vars(args).copy()
+            for key in ('command', 'input', 'output_root'):
+                fields.pop(key)
+            if fields['pilot_id'] is None:
+                fields.pop('pilot_id')
+            path = import_centroid_csv(args.input, args.output_root, **fields)
+            result = {'manifest': str(path), **verify_centroid_bundle(path)}
+        else:
+            result = verify_centroid_bundle(args.manifest)
+    except (PilotError, OSError) as exc:
+        print(json.dumps({'status': 'rejected', 'code': getattr(exc, 'code', 'STORAGE_FAILURE'), 'message': str(exc)}))
+        raise SystemExit(2)
+    print(json.dumps(result, sort_keys=True, indent=2))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
