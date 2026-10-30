@@ -331,6 +331,15 @@ class StudyService:
             if result['run_id'] != obs.session_id or result['epistemic_state'] != obs.epistemic_state.value:
                 raise ValueError("Result identity mismatch.")
             return result
+        if obs.kind.value == 'MS_CENTROID':
+            from virtual_lab.pilots.ms_workflow import read_verified_bundle
+            result, _, _ = read_verified_bundle(path, expected_manifest_sha256=obs.artifact_sha256)
+            if (result['run_id'] != obs.session_id or obs.observation_id != 'ms-' + result['run_id']
+                    or result['instrument_id'] != obs.instrument_id or obs.epistemic_state.value != 'UNKNOWN'
+                    or result['peak_count'] != obs.sample_count
+                    or (result['acquired_at_utc'] or result['created_at_utc']) != obs.acquisition_utc):
+                raise ValueError('MS observation metadata disagrees with its manifest.')
+            return result
         if obs.kind.value == 'RESEARCH_RECORD' and obs.instrument_id not in ('research_plan', 'research_conclusion'):
             raise ValueError('Unsupported research record identity.')
         if (obs.kind.value in ('SENSOR_STREAM', 'CAMERA_FRAME', 'MICROSCOPY', 'SPECTROSCOPY', 'ELECTROCHEMISTRY')
@@ -414,10 +423,13 @@ class StudyService:
             result = self.inspect(obs)
             original = Path(obs.artifact_path)
             names = [original.name]
-            if obs.instrument_id in ('alphagenome', 'alphafold_db', 'bitvision_simulator_audit'):
+            if obs.kind.value == 'MS_CENTROID' or obs.instrument_id in ('alphagenome', 'alphafold_db', 'bitvision_simulator_audit'):
                 names += [a['file'] for a in result['artifacts']]
+            if obs.kind.value == 'MS_CENTROID':
+                from virtual_lab.pilots.ms_workflow import read_verified_bundle
+                _, snapshot, _ = read_verified_bundle(original, expected_manifest_sha256=obs.artifact_sha256)
             for name in names:
-                files[f"artifacts/{i}/{name}"] = (original.parent / name).read_bytes()
+                files[f"artifacts/{i}/{name}"] = snapshot[name] if obs.kind.value == 'MS_CENTROID' else (original.parent / name).read_bytes()
             rows[i]['artifact_path'] = f"artifacts/{i}/{original.name}"
         snapshot = {'format': 'virtuallab-study', 'version': 1, 'project': project,
                     'experiment': row, 'observations': rows,
