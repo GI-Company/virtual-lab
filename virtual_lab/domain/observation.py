@@ -319,6 +319,7 @@ SENSOR_QUANTITY_MAP: dict[str, list[QuantityDescriptor]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ObservationKind(Enum):
+    MS_CENTROID = "MS_CENTROID"
     RESEARCH_RECORD = "RESEARCH_RECORD"
     BIOLOGICAL_SYSTEM = "BIOLOGICAL_SYSTEM"
     CALIBRATION     = "CALIBRATION"
