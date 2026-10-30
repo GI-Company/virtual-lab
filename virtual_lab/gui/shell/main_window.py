@@ -195,7 +195,10 @@ class VirtualLabApplication(QMainWindow):
         self.calibration = CalibrationWorkspace(self.workspace, self.projects.service)
         from virtual_lab.gui.biological_workspace import BiologicalWorkspace
         self.biological = BiologicalWorkspace(self.workspace, self.projects.service)
+        from virtual_lab.gui.ms_pilot_workspace import MSPilotWorkspace
+        self.ms_pilot = MSPilotWorkspace(self.workspace, self.projects.service)
         self.tabs.addTab(self.projects, "Projects")
+        self.tabs.addTab(self.ms_pilot, "MS Workflow")
         self.tabs.addTab(self.biological, "Biological objects")
         self.workspace.biologicalDraftRequested.connect(lambda _: self.tabs.setCurrentWidget(self.biological))
         self.tabs.addTab(self.world, "RHO reference")

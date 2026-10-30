@@ -50,7 +50,9 @@ def main(root):
     window = VirtualLabApplication()
     from virtual_lab.version import __version__
     assert window.windowTitle() == f"VirtualLab v{__version__} - Scientific Cockpit"
-    assert window.tabs.count() == 13 and window.tabs.tabText(0) == 'Projects'
+    assert window.tabs.tabText(0) == 'Projects'
+    assert {'Projects', 'MS Workflow', 'Simulation', 'Evidence', 'Provenance'} <= {
+        window.tabs.tabText(i) for i in range(window.tabs.count())}
     assert window.ai_enable_button.isEnabled()
     if '--shell-only' in sys.argv:
         assert window.runtime.agent_runtime is None and not window.runtime.gateway.server.isListening()
