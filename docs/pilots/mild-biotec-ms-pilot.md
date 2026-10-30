@@ -1,6 +1,6 @@
 # Mild Biotec initial MS workflow pilot
 
-Status: internal engineering release candidate, `1.0.0b2+ms.1`. Laboratory acceptance, data permissions, deployment choice and commercial terms remain pending. This implements a local centroid peak-list workflow; it does not validate measurements, protein identity, purity, calibration or structure.
+Status: internal engineering release candidate, `1.0.0b2+ms.2`. Laboratory acceptance, data permissions, deployment choice and commercial terms remain pending. This implements a local centroid peak-list workflow; it does not validate measurements, protein identity, purity, calibration or structure.
 
 ## Install and launch without AI credentials
 
@@ -17,7 +17,7 @@ The dedicated pilot window uses the existing VirtualLab project, experiment, obs
 For a built wheel in an otherwise clean environment:
 
 ```bash
-python -m pip install 'virtual_lab-1.0.0b2+ms.1-py3-none-any.whl[cockpit,pilot]'
+python -m pip install 'virtual_lab-1.0.0b2+ms.2-py3-none-any.whl[cockpit,pilot]'
 virtuallab-ms-pilot
 ```
 
@@ -29,8 +29,8 @@ The wheel alone does not include third-party dependencies. `uv.lock` records ver
 2. Open **MS Workflow**. Select the permitted CSV and enter pilot, dataset, sample, instrument and operator/pseudonym identifiers. Acquisition time and units can remain unspecified.
 3. Confirm that the data is synthetic or approved nonconfidential data permitted for the pilot.
 4. Select **Validate and preview**. Inspect the spectrum and the original/normalized previews. Finalize import only after validation passes. Changes to the selected source or metadata require another preview.
-5. Select the imported dataset. Verify integrity, compare repeat processing, and record an approval or rejection with a reviewer pseudonym and note.
-6. Export a JSON or PDF workflow report. Use Projects to exchange a complete `.vlab-study` package containing the preserved original, normalized peaks and manifest. Imported packages can be viewed in the receiving workspace's MS panel.
+5. Select the imported dataset. Verify integrity, compare repeat processing, run **Test alteration detection** on a temporary copy, and record an approval or rejection with a reviewer pseudonym and note. The original source is never intentionally changed.
+6. Export a JSON or PDF workflow report. PDF export also writes companion JSON from the exact same snapshot and a detached `.sha256` file covering both final files. JSON-only export also writes a checksum file. Use **Verify exported PDF / JSON checksums**, or `python -m virtual_lab.pilots.ms_workflow verify-report /absolute/report.sha256`, to check them. PDF/JSON files and their checksum file are published together with rollback on failure; an audit-recording failure removes that operation's exports. Use Projects to exchange a complete `.vlab-study` package containing the preserved original, normalized peaks and manifest. Imported packages can be viewed in the receiving workspace's MS panel.
 
 Workflow approval never changes the evidence state from `UNKNOWN` to `MEASURED`. Identifiers and acquisition times are supplied assertions, not authenticated instrument metadata. The initial pilot is limited to three distinct dataset IDs per pilot ID; repeat imports retain separate run IDs and explicit duplicate references.
 
@@ -49,7 +49,7 @@ mz,intensity
 - Numeric fields use an explicit decimal grammar: no missing values, whitespace padding, formulas, NaN, infinity, underscores or extra fields. Blank rows are rejected.
 - m/z must be positive and intensity nonnegative. Nonzero values have decimal order between -100 and 100 and at most 100 significant digits. These are implementation bounds, not scientific QC thresholds. Zero intensity is allowed.
 - Identifiers use 1-80 ASCII letters/digits with dots, underscores or hyphens after the first character. Acquisition times, when provided, require ISO 8601 timezone information and are stored in UTC.
-- Units are entered explicitly or stored as JSON `null`; no units are inferred. The m/z column name identifies its intended meaning, not its acquisition convention.
+- Optional declared data origin distinguishes synthetic, laboratory-supplied, public-reference and unspecified data. Optional source-reference metadata preserves accession, URL, attribution, license text and adaptation notes without automatically fetching any URL. None of these declarations authenticate instrument origin. Units are entered explicitly or stored as JSON `null`; no units are inferred. The m/z column name identifies its intended meaning, not its acquisition convention.
 - Original bytes are retained as `source.csv`. `peaks.csv` uses exact decimal canonicalization, LF line endings and sorting by m/z then intensity. Duplicate entries remain. No filtering, centroiding, rescaling, deconvolution or recalibration occurs.
 - Decimal text is preserved exactly in value, avoiding binary floating-point rounding during normalization. The graph uses floating-point coordinates for display only.
 
@@ -69,9 +69,9 @@ For a signed `.vlab` export, `virtual_lab.pilots.bundles.export_signed_bundle(se
 
 The spectrum supports pan, zoom, cursor coordinates and optional log intensity display (zero points are omitted only from that display). Original/normalized previews show the first 16 KiB, clearly labeled; stored artifacts contain the full data.
 
-Reports include identifiers, acquisition/processing information, validation status, warnings/errors, peak count, m/z range, base peak, exact summed centroid intensity, repeated m/z entry count, hashes, rerun result, review status, evidence history, software version and limitations. Summed centroid intensity is not labeled instrument-reported total ion current. Numeric summaries in JSON are decimal strings to preserve precision.
+The two-page reference layout includes a vector centroid spectrum plot, a compact metric summary, separate PASS/FAIL/NOT RUN checks for import validity, reproducibility, source integrity, traceability and intentional alteration, and a readable audit-event table. Missing checks are NOT RUN rather than assumed successful. Detailed event payloads and spectrum display coordinates remain available in JSON. Reports include identifiers, acquisition/processing information, validation status, warnings/errors, peak count, m/z range, base peak, exact summed centroid intensity, repeated m/z entry count, hashes, rerun result, review status, evidence history, software version and limitations. Summed centroid intensity is not labeled instrument-reported total ion current. Numeric summaries in JSON are decimal strings to preserve precision.
 
-The same report snapshot produces identical JSON and PDF bytes. A later review, rerun or export adds lifecycle events and therefore produces a different report snapshot. Repeat-processing acceptance concerns normalized CSV bytes and digest. A report can reconstruct this implemented normalization method from the accompanying source and versioned processing contract; it does not reconstruct upstream instrument processing.
+The same report snapshot produces identical JSON and PDF bytes. The PDF contains input/normalized/manifest hashes; the detached checksum file hashes the final PDF and JSON bytes, avoiding a self-referential PDF hash. Export receipts are recorded after file publication and supplied separately in demonstration packets. A later review, rerun or export adds lifecycle events and therefore produces a different report snapshot. Repeat-processing acceptance concerns normalized CSV bytes and digest. A report can reconstruct this implemented normalization method from the accompanying source and versioned processing contract; it does not reconstruct upstream instrument processing.
 
 ## Storage, retention and recovery
 
@@ -83,7 +83,7 @@ Pilot files are stored under `ms-pilot-runs` in the existing VirtualLab applicat
 
 Set `VIRTUALLAB_DATA_DIR` to a dedicated pilot directory **before launch** to isolate retention, access and deletion. Use a canonical local path with no symbolic links in any path component. Input, output and artifact symlinks are rejected. On POSIX systems new pilot run directories are private and artifact files are mode 0600. On Windows use an account-restricted folder and OS access controls. There is no application encryption, role management, automatic retention expiry, backup erasure or secure-delete guarantee.
 
-Only one application instance should write a pilot directory at a time. Files are staged privately, flushed and published before completion. Failed writes remove their staged files. A restart marks registered imports without a completion event as failed, renames their manifests to `manifest.interrupted.json`, and removes any incomplete query-store observations. Complete runs alone appear in the local dataset list. Hidden `.ms-intake-*` remnants from a killed process are not automatically deleted because they may belong to a running process. Close all instances before inspecting or deleting remnants.
+An operating-system writer lease now enforces one application instance per local workspace, covering both the dedicated pilot and full cockpit. A second launch is rejected before opening the application databases or running recovery. The OS releases the lease if the process dies; lock files are retained rather than unlinked. This does not make a network-shared directory a supported deployment. Files are staged privately, flushed and published before completion. Failed writes remove their staged files. A restart marks registered imports without a completion event as failed, renames their manifests to `manifest.interrupted.json`, and removes any incomplete query-store observations. Complete runs alone appear in the local dataset list. Hidden `.ms-intake-*` remnants from a killed process are not automatically deleted because they may belong to a running process. Close all instances before inspecting or deleting remnants.
 
 Agree a retention period before data exchange. After closing VirtualLab, delete the dedicated pilot directory and separately delete exported packages/reports, staging remnants and backups according to the agreed policy. Do not remove a shared application directory containing unrelated studies. This is ordinary file deletion; it does not guarantee forensic erasure. The software sends no telemetry or automatic uploads. Export/transfer authorization and the chosen sharing channel remain the parties' responsibility.
 
@@ -103,9 +103,17 @@ CI uses locked dependencies on Python 3.10/3.11/3.12, a separate optional-AI com
 
 ## Local verification record
 
-Verified on macOS with locked installations: Python 3.10, 3.11 and 3.12 each passed **439 tests**, with 13 explicitly skipped optional/live/hardware cases. A separate Python 3.12 environment with optional AI dependencies passed **463 tests**, with 10 skips. Live service calls and laboratory scientific acceptance were not performed. The generated JUnit records and local validation summary are retained with the build outputs.
+The prior `ms.1` candidate passed 439 offline tests and 463 optional-AI tests. The `ms.2` release-gates run adds process-exclusion, strict release validation, report checksum/tamper tests and an opt-in public-data matrix. With the supplied public ZIP enabled, Python 3.10, 3.11 and 3.12 each passed **530 tests**, with 13 optional/live/hardware skips. The optional-AI environment passed **554 tests**, with 10 skips. The public-data module contributes **66 cases per environment**. Without the supplied ZIP, that module is explicitly skipped; its spectra are not bundled in Git or CI.
 
-Two builds produced identical wheel and source-archive bytes; wheel RECORD entries were checked. A clean, non-editable wheel installation completed synthetic import, rerun, JSON/PDF export and GUI construction with no AI packages and with socket connections/binds blocked. The demo desktop screenshot and both report pages were visually inspected. These checks establish local workflow behavior, not cross-platform or scientific acceptance.
+The supplied MassBank archive contains three converted public small-molecule MS2 peak lists (5, 30 and 41 entries). Original CSV digests and every decimal peak pair were compared with the linked upstream records. Source attribution and CC BY-SA license text are retained in local evidence packets. Record publication dates are not treated as acquisition timestamps. Tests establish import, byte preservation, normalization, traceability and reporting behavior; they do not validate MS/MS interpretation or protein/antibody characterization.
+
+Run the optional data tests with `VIRTUALLAB_PUBLIC_MS_ZIP=/absolute/VirtualLab_Public_MassBank_MS_Test_Datasets.zip uv run --no-sync python -m pytest tests/pilots/test_public_ms_samples.py -v`. The archive is read under explicit entry/path/size limits. Generated test data and reports remain outside Git.
+
+Runtime dependencies are hash-locked and audited through pip-audit 2.10.1. The old zeroconf 0.132.2 pin was replaced by 0.151.5 after checking the [upstream parser advisory](https://github.com/python-zeroconf/python-zeroconf/security/advisories/GHSA-qc2x-6f54-m6h9) and related release fixes; the updated locked runtime audit reported no known vulnerabilities. This is a dated advisory scan, not a guarantee that no vulnerabilities exist. CI now requires that audit and a clean non-editable wheel smoke test before producing its release artifact.
+
+Reproducible wheel/source comparisons check matching inventories, reject duplicate/archive traversal/link/private-environment entries, and verify every wheel RECORD hash. Release-manifest generation refuses failed, errored or entirely skipped suites and rejects a wheel/source version mismatch.
+
+The screen-recording utility captures actual native Qt rendering, automated mouse/key interactions and a real pytest subprocess log. File-picker return paths are supplied programmatically. Recordings have captions, no audio, no AI calls and no live instrument control; they are not scientific validation demonstrations.
 
 ## Release and external gates
 

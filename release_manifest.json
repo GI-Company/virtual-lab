@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0b2+ms.1",
-  "generated_utc": "2026-10-30T03:53:22+00:00",
-  "test_suite": "Offline MS pilot and full regression suite, macOS, Python 3.12",
+  "version": "1.0.0b2+ms.2",
+  "generated_utc": "2026-10-30T23:41:20+00:00",
+  "test_suite": "MS pilot release/security gates and public reference tests, macOS, Python 3.12",
   "test_result_source": "pytest JUnit XML",
-  "tests_total": 452,
-  "tests_passed": 439,
+  "tests_total": 543,
+  "tests_passed": 530,
   "tests_failed": 0,
   "tests_errors": 0,
   "tests_skipped": 13,
@@ -72,7 +72,7 @@
   "architecture": "arm64",
   "build": {
     "status": "passed",
-    "artifact": "virtual_lab-1.0.0b2+ms.1-py3-none-any.whl",
-    "sha256": "2145c5e43ea565bef8a2f44c1d4b94bad02e5602e6d38aa861f400f35200cd63"
+    "artifact": "virtual_lab-1.0.0b2+ms.2-py3-none-any.whl",
+    "sha256": "b5f19a4bcfc789671fb95e5d4f00a0e384d4b46f516fbbcd449998353ee9e433"
   }
 }

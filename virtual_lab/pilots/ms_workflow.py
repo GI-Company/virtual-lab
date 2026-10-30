@@ -15,7 +15,7 @@ import uuid
 from pydantic import ValidationError
 from virtual_lab.version import __version__
 from virtual_lab.pilots.schemas import (AcquisitionMetadata, Manifest, PilotError,
-    MAX_SOURCE_BYTES, MAX_PEAKS, MAX_MANIFEST_BYTES, PROCESSING_VERSION)
+    MAX_SOURCE_BYTES, MAX_NORMALIZED_BYTES, MAX_PEAKS, MAX_MANIFEST_BYTES, PROCESSING_VERSION)
 from virtual_lab.pilots.storage import checked_path, read_bounded, write_private
 
 SCHEMA_VERSION = 2
@@ -65,9 +65,10 @@ def canonical_decimal(value):
     return ('-' if value < 0 else '') + mantissa + 'e' + str(value.adjusted())
 
 
-def parse_centroids(source):
-    if not source or len(source) > MAX_SOURCE_BYTES:
-        raise PilotError('SIZE_LIMIT', 'CSV must be nonempty and at most 16 MiB')
+def parse_centroids(source, *, normalized=False):
+    limit = MAX_NORMALIZED_BYTES if normalized else MAX_SOURCE_BYTES
+    if not source or len(source) > limit:
+        raise PilotError('SIZE_LIMIT', f'CSV must be nonempty and at most {limit // (1024*1024)} MiB')
     try:
         text = source.decode('utf-8-sig')
     except UnicodeDecodeError as exc:
@@ -135,12 +136,12 @@ def load_manifest(manifest_path):
 def import_centroid_csv(input_path, output_root, *, sample_id, instrument_id, operator_id,
                         approved_nonconfidential, acquired_at=None,
                         pilot_id='mild-biotec-initial-ms', dataset_id=None,
-                        mz_units=None, intensity_units=None, expected_source_sha256=None):
+                        mz_units=None, intensity_units=None, expected_source_sha256=None, data_origin='unspecified', source_reference=None):
     if approved_nonconfidential is not True:
         raise PilotError('DATA_APPROVAL', 'Explicit approval for nonconfidential pilot data is required')
     run_id = str(uuid.uuid4())
     try:
-        metadata = AcquisitionMetadata(pilot_id=pilot_id, dataset_id=dataset_id or run_id,
+        metadata = AcquisitionMetadata(data_origin=data_origin, source_reference=source_reference, pilot_id=pilot_id, dataset_id=dataset_id or run_id,
             sample_id=sample_id, instrument_id=instrument_id, operator_id=operator_id,
             acquired_at_utc=acquired_at, mz_units=mz_units, intensity_units=intensity_units)
     except ValidationError as exc:
@@ -222,9 +223,12 @@ def main():
         ingest.add_argument('--' + field, required=True)
     for field in ('pilot-id', 'dataset-id', 'acquired-at', 'mz-units', 'intensity-units'):
         ingest.add_argument('--' + field)
+    ingest.add_argument('--data-origin', choices=('synthetic','laboratory_supplied','public_reference','unspecified'), default='unspecified')
     ingest.add_argument('--approved-nonconfidential', action='store_true')
     verify = commands.add_parser('verify')
     verify.add_argument('manifest', type=Path)
+    reports = commands.add_parser('verify-report', help='Verify exported PDF/JSON SHA-256 files')
+    reports.add_argument('checksum', type=Path)
     args = parser.parse_args()
     try:
         if args.command == 'import':
@@ -235,6 +239,9 @@ def main():
                 fields.pop('pilot_id')
             path = import_centroid_csv(args.input, args.output_root, **fields)
             result = {'manifest': str(path), **verify_centroid_bundle(path)}
+        elif args.command == 'verify-report':
+            from virtual_lab.pilots.reporting import verify_report_files
+            result = verify_report_files(args.checksum)
         else:
             result = verify_centroid_bundle(args.manifest)
     except (PilotError, OSError) as exc:

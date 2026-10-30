@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime, timezone
 
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
+MAX_NORMALIZED_BYTES = MAX_SOURCE_BYTES * 4
+MAX_REPORT_BYTES = 16 * 1024 * 1024
 MAX_PEAKS = 100_000
 MAX_MANIFEST_BYTES = 64 * 1024
 PROCESSING_VERSION = 'centroid-decimal-sort-v2'
@@ -32,7 +34,17 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
 
 
+class SourceReference(StrictModel):
+    accession: str = Field(max_length=200)
+    url: str = Field(max_length=2000)
+    license: str = Field(max_length=200)
+    attribution: str = Field(max_length=2000)
+    notes: str = Field(default='', max_length=2000)
+
+
 class AcquisitionMetadata(StrictModel):
+    data_origin: Literal['synthetic', 'laboratory_supplied', 'public_reference', 'unspecified'] = 'unspecified'
+    source_reference: SourceReference | None = None
     pilot_id: Identifier = 'mild-biotec-initial-ms'
     dataset_id: Identifier
     sample_id: Identifier

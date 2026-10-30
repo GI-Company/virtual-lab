@@ -38,5 +38,7 @@ def test_signed_bundle_uses_external_trust_and_detects_replacement(tmp_path, mon
             for name,raw in files.items(): archive.writestr(name,raw)
         assert 'Invalid manifest signature' in explain_provenance(str(tmp_path/'replacement.vlab'))
     finally:
+        if 'svc' in locals():
+            svc.close()
         store.close()
         ledger.conn.close()
