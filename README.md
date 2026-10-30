@@ -8,7 +8,9 @@ and export/reopen the complete study without AI packages, credentials or service
 Install `.[cockpit]` and launch with `python -m virtual_lab.main`. Start with the
 [manual research walkthrough](docs/manual-research.md).
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.1-blue.svg)](release_manifest.json)
+**MS workflow pilot:** [local installation, CSV contract, provenance, reports and limitations](docs/pilots/mild-biotec-ms-pilot.md). Launch the dedicated offline panel with `virtuallab-ms-pilot` after installing the locked `cockpit` and `pilot` extras.
+
+[![Version](https://img.shields.io/badge/version-1.0.0b2%2Bms.1-blue.svg)](release_manifest.json)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
 [![Hardware Acceleration](https://img.shields.io/badge/compute-Apple%20Silicon%20Metal%20%2F%20MLX-purple.svg)]()
@@ -28,7 +30,7 @@ Unlike traditional computational notebooks or black-box ML platforms, VirtualLab
 ```
                      ┌───────────────────────────────────────────────┐
                      │          VirtualLab Research Cockpit          │
-                     │  (PySide6 Desktop Shell • 13 Workspaces)      │
+                     │  (PySide6 Desktop Shell • MS Workflow)      │
                      └──────┬───────────────────┬─────────────────┬──┘
                             │                   │                 │
              ┌──────────────┴──────┐  ┌─────────┴───────┐  ┌──────┴──────────────┐

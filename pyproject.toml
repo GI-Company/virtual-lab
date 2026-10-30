@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -32,6 +32,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+pilot = ["reportlab>=4,<6"]
 ai = [
     "google-genai>=0.2.2",
     "google-adk>=2.10,<3"
@@ -48,10 +49,15 @@ cockpit = [
     "websockets>=14,<16"
 ]
 dev = [
+    "build==1.6.1",
+    "hatchling==1.33.0",
     "pytest>=8",
     "pytest-qt>=4",
     "jsonschema>=4,<5"
 ]
+
+[project.scripts]
+virtuallab-ms-pilot = "virtual_lab.pilots.desktop:main"
 
 [project.urls]
 Homepage = "https://github.com/GI-Company/virtual-lab"
@@ -64,6 +70,10 @@ path = "virtual_lab/version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["virtual_lab"]
 exclude = ["**/test_*.py", "**/__pycache__/**", "**/*.pyc"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/virtual_lab", "/tests", "/scripts", "/docs", "/protocol", "/examples", "/README.md", "/pyproject.toml", "/uv.lock", "/release_manifest.json", "/start_virtuallab.sh", "/.github", "/.gitignore"]
+exclude = ["**/__pycache__/**", "**/*.pyc"]
 
 [tool.hatch.build.targets.sdist.force-include]
 "virtual_lab/calibration/data" = "virtual_lab/calibration/data"

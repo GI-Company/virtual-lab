@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-beta.1",
-  "generated_utc": "2026-10-19T17:39:39+00:00",
-  "test_suite": "Default manual research regression suite without Google AI SDKs (macOS native Qt)",
+  "version": "1.0.0b2+ms.1",
+  "generated_utc": "2026-10-30T03:53:22+00:00",
+  "test_suite": "Offline MS pilot and full regression suite, macOS, Python 3.12",
   "test_result_source": "pytest JUnit XML",
-  "tests_total": 375,
-  "tests_passed": 362,
+  "tests_total": 452,
+  "tests_passed": 439,
   "tests_failed": 0,
   "tests_errors": 0,
   "tests_skipped": 13,
@@ -67,12 +67,12 @@
     "live cloud API / external-service acceptance",
     "MLX/Metal hardware tests"
   ],
-  "python_version": "3.14.8",
+  "python_version": "3.12.14",
   "platform": "Darwin",
   "architecture": "arm64",
   "build": {
     "status": "passed",
-    "artifact": "virtual_lab-1.0.0b1-py3-none-any.whl",
-    "sha256": "13d33823fe3536705ff8151a5194329f61fc0082d3a9a9bdc8ec6fc31374cc39"
+    "artifact": "virtual_lab-1.0.0b2+ms.1-py3-none-any.whl",
+    "sha256": "2145c5e43ea565bef8a2f44c1d4b94bad02e5602e6d38aa861f400f35200cd63"
   }
 }

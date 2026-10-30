@@ -47,3 +47,9 @@ test-results*.xml
 # VirtualLab specific
 data/
 .virtuallab/
+
+# Local MS pilot outputs (never commit laboratory datasets)
+/output/
+/tmp/
+ms-pilot-runs/
+*.vlab-study
