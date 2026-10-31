@@ -215,6 +215,9 @@ class VirtualLabApplication(QMainWindow):
         self.ms_pilot = MSPilotWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
         self.tabs.addTab(self.projects, "Projects")
         self.tabs.addTab(self.ms_pilot, "MS Workflow")
+        from virtual_lab.gui.intent_workspace import IntentWorkspace
+        self.intent_panel = IntentWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
+        self.tabs.addTab(self.intent_panel, "INTENT (experimental)")
         self.tabs.addTab(self.biological, "Biological objects")
         self.workspace.biologicalDraftRequested.connect(lambda _: self.tabs.setCurrentWidget(self.biological))
         self.tabs.addTab(self.world, "RHO reference")
@@ -447,6 +450,10 @@ class VirtualLabApplication(QMainWindow):
             recommended.style().polish(recommended)
 
     def closeEvent(self,event):
+        if self.intent_panel.busy:
+            self.intent_panel.cancel()
+            event.ignore()
+            return
         if self.computational.busy:
             self.computational.cancel()
             self.computational.status.setText("Cancelling computational run; close again when cancellation completes.")
