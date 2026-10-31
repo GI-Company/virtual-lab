@@ -10,6 +10,8 @@ Install `.[cockpit]` and launch with `python -m virtual_lab.main`. Start with th
 
 **MS workflow pilot:** [local installation, CSV contract, provenance, reports and limitations](docs/pilots/mild-biotec-ms-pilot.md). Launch the dedicated offline panel with `virtuallab-ms-pilot` after installing the locked `cockpit` and `pilot` extras.
 
+**Experimental INTENT milestone:** [guarded local numerical controller and BSA verification](docs/intent-experiment-controller.md), with the [complete architecture task list](docs/roadmaps/research-intent-checklist.md). Predictions and learning default off. Institutional reviewer provisioning, central provider settings and shared-instance collaboration remain gated future work.
+
 [![Version](https://img.shields.io/badge/version-1.0.0b2%2Bms.2-blue.svg)](release_manifest.json)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()

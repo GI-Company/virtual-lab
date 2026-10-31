@@ -41,11 +41,18 @@ class MSPilotWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(self.projects, 'Projects')
         self.tabs.addTab(self.ms_pilot, 'MS Workflow')
+        from virtual_lab.gui.intent_workspace import IntentWorkspace
+        self.intent_panel = IntentWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
+        self.tabs.addTab(self.intent_panel, 'INTENT (experimental)')
         for index in range(self.tabs.count()):
             make_workspace_scrollable(self.tabs.widget(index))
         self.setCentralWidget(self.tabs)
 
     def closeEvent(self, event):
+        if self.intent_panel.busy:
+            self.intent_panel.cancel()
+            event.ignore()
+            return
         self.projects.service.store.close()
         self.ledger.conn.close()
         self._workspace_lease.close()
