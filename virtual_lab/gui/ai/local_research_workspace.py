@@ -61,12 +61,22 @@ class AgentRuntimeWorker(QObject):
 
     def cancel(self):
         self._cancel_requested.set()
+        if getattr(self.agent_runtime, 'managed', False) is True:
+            self.agent_runtime.settings.cancel()
         if self._active_future is not None and not self._active_future.done():
             self._active_future.cancel()
 
     @Slot(str)
     def run_episode(self, user_request):
         try:
+            if getattr(self.agent_runtime, 'managed', False) is True:
+                self.episode_started.emit('Starting selected Settings Center text provider')
+                answer = self.agent_runtime.settings.request(user_request)
+                if not self._cancel_requested.is_set():
+                    self.answer_completed.emit(answer, ['AI_GENERATED', 'UNVERIFIED', 'TEXT_ONLY'])
+                else:
+                    self.episode_failed.emit('Request cancelled')
+                return
             self.episode_started.emit("Starting Gemini ADK multi-agent episode")
             from google.genai import types
 
@@ -372,6 +382,12 @@ class LocalResearchWorkspace(QWidget):
         self.mock_proj = {}
         self._vertex_verified = False
         self._refresh_vertex_status()
+        if getattr(self.agent_runtime, 'managed', False) is True:
+            self.lbl_cert.setText('Settings Center provider · text assistance · no tool execution')
+            for field in (self.provider, self.txt_model, self.txt_vertex_key, self.btn_vertex_key):
+                field.setEnabled(False)
+                field.hide()
+            self.txt_vertex_key.clear()
 
     def set_compact_mode(self, compact: bool):
         """Hide the HVIEW side-pane when docked as a narrow drawer so the main workspace isn't squeezed."""
@@ -380,6 +396,12 @@ class LocalResearchWorkspace(QWidget):
         self.status_panel.setMinimumHeight(40 if compact else 76)
 
     def _refresh_vertex_status(self):
+        if getattr(self.agent_runtime, 'managed', False) is True:
+            settings=self.agent_runtime.settings.repository.load()
+            self.lbl_egress.setText(settings.provider.kind + ' · configured in Settings Center · no fallback')
+            self.btn_send.setEnabled(settings.assistant_enabled)
+            self.btn_research.setEnabled(settings.assistant_enabled)
+            return
         gemini = self.provider.currentData() == 'gemini'
         name = 'Gemini API' if gemini else 'Vertex AI'
         configured = bool((os.environ.get('VIRTUALLAB_GEMINI_API_KEY') or os.environ.get('GEMINI_API_KEY')) if gemini else
@@ -398,6 +420,8 @@ class LocalResearchWorkspace(QWidget):
         return 'VIRTUALLAB_GEMINI_MODEL' if self.provider.currentData() == 'gemini' else 'VIRTUALLAB_VERTEX_MODEL'
 
     def _provider_changed(self, *_):
+        if getattr(self.agent_runtime, 'managed', False) is True:
+            return
         if self.agent_thread is not None and self.agent_thread.isRunning():
             self.provider.blockSignals(True)
             self.provider.setCurrentIndex(self.provider.findData(os.environ.get('VIRTUALLAB_AI_PROVIDER', 'vertex')))
@@ -412,6 +436,8 @@ class LocalResearchWorkspace(QWidget):
         self._refresh_vertex_status()
 
     def _apply_vertex_key(self):
+        if getattr(self.agent_runtime, 'managed', False) is True:
+            return
         key = self.txt_vertex_key.text().strip()
         if not key:
             return

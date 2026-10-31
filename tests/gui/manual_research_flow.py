@@ -156,7 +156,8 @@ def main(root):
         assert Path(obs.artifact_path).is_relative_to(recipient)
     assert imported.runtime.agent_runtime is None and imported.local_research is None
     imported.ai_enable_button.click()
-    assert 'not installed' in imported.ai_status.text()
+    assert 'Settings' in imported.ai_status.text()
+    assert imported.navigation.stack.currentWidget() is imported.navigation.settings
     assert imported.runtime.agent_runtime is None
     assert not any(name.startswith(('virtual_lab.ai', 'google.adk', 'google.genai')) for name in sys.modules)
     close_window(app, imported)

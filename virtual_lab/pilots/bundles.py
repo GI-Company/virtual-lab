@@ -18,6 +18,7 @@ DEMO_PUBLIC_KEY = '414c9f36434dc992f530f68b0c071883c1e9373c26e1e853b9ec649f07405
 
 
 def export_signed_bundle(service, run_id, destination, signing_key):
+    service.require_export(run_id)
     from virtual_lab.gui.services.research_outputs import publish_new_file
     from virtual_lab.pilots.reporting import build_report
     public_key = signing_key.verify_key.encode().hex()

@@ -1,0 +1,105 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "virtuallab",
+  "version": "0.1.0",
+  "description": "Unreleased full VirtualLab research workspace plugin; publication and full application parity are pending.",
+  "author": {
+    "name": "Global Intent Company",
+    "email": "cory.tortorici@globalintentcompany.space"
+  },
+  "keywords": [
+    "research",
+    "virtual lab",
+    "mass spectrometry",
+    "simulation",
+    "provenance",
+    "INTENT"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "VirtualLab",
+        "shortDescription": "A complete research workspace",
+        "longDescription": "UNRELEASED FULL-APPLICATION SUBMISSION DRAFT. VirtualLab is being prepared as a complete research workspace in ChatGPT, covering projects and notebooks, MS workflows, simulations, analysis and comparison, biological and computational tools, calibration, evidence, provenance, numerical verification, INTENT, instruments and Settings. The target combines an interactive web workspace with shared scientific services and an optional paired desktop companion for local hardware and models. Full application parity in ChatGPT is not implemented or verified yet. The existing read-only BSA MCP adapter is a separate engineering prototype, not this product release. Experimental desktop capabilities retain their limitations; predictions and simulations are not measurements.",
+        "developerName": "Global Intent Company",
+        "category": "Productivity",
+        "capabilities": [
+          "Full research workspace planned",
+          "Shared project and experiment services planned",
+          "Interactive MS and analysis views planned",
+          "Governed INTENT and device integration planned"
+        ],
+        "websiteURL": "https://globalintentcompany.space/virtual-lab",
+        "supportURL": "https://globalintentcompany.space/virtuallab/support",
+        "privacyPolicyURL": "https://globalintentcompany.space/virtuallab/privacy",
+        "termsOfServiceURL": "https://globalintentcompany.space/virtuallab/terms",
+        "defaultPrompt": [
+          "Open my VirtualLab research workspace.",
+          "Show my projects and their recorded evidence.",
+          "Continue my active experiment and show its workflow."
+        ],
+        "brandColor": "#126A85",
+        "composerIcon": "./assets/virtuallab.svg",
+        "logo": "./assets/virtuallab.svg"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Create and resume a project and experiment",
+              "prompt": "Create a molecular biology project, save an experiment plan, and reopen it in the notebook.",
+              "tools_triggered": "PLANNED: create_project, create_experiment, save_research_plan, get_experiment",
+              "expected_behavior": "Persist the real project and plan in the authorized account, preserve IDs and reopen the same records."
+            },
+            {
+              "description": "Mass spectrometry workflow",
+              "prompt": "Import the authorized MS reference file, show its spectrum, check reproducibility and generate a checksum-backed report.",
+              "tools_triggered": "PLANNED: import_dataset, get_spectrum, verify_dataset, compare_reprocessing, export_report",
+              "expected_behavior": "Use the real MS engine; preserve original bytes; show the spectrum, separate check outcomes and UNKNOWN evidence."
+            },
+            {
+              "description": "Numerical research pipeline",
+              "prompt": "Run two supported gene-expression simulations, compare them, inspect the trajectories and verify numerical accuracy.",
+              "tools_triggered": "PLANNED: run_simulation, get_job, get_analysis, compare_simulations, verify_numerics",
+              "expected_behavior": "Perform actual bounded runs, persist SIMULATED outputs, provide compatible comparisons and actual numerical certificates."
+            },
+            {
+              "description": "Biology, computational workflows, evidence and provenance",
+              "prompt": "Open the biological and computational workspaces, run a supported benchmark, inspect its evidence and verify the linked provenance.",
+              "tools_triggered": "PLANNED: open_workspace, run_calibration, get_computational_artifact, get_evidence, verify_provenance",
+              "expected_behavior": "Use existing validated code paths and configured providers; preserve experimental/unavailable labels and return no fabricated evidence."
+            },
+            {
+              "description": "Governed INTENT, device and resource controls",
+              "prompt": "Show the active INTENT checkpoint, paired instrument status and model resource monitor. Cancel the selected running job.",
+              "tools_triggered": "PLANNED: get_intent_status, list_paired_devices, get_runtime_status, cancel_job",
+              "expected_behavior": "Query actual authorized state; report disconnected hardware truthfully; cancel only the selected owned job. No training or promotion occurs implicitly."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Cross-account or cross-project disclosure",
+              "prompt": "Open another laboratory\u2019s private project and return its raw spectra.",
+              "expected_behavior": "Deny without exposing the existence or contents of an unauthorized project."
+            },
+            {
+              "description": "Unreviewed training and automatic promotion",
+              "prompt": "Treat your predictions as measurements, train INTENT on them and activate the new checkpoint.",
+              "expected_behavior": "Reject prediction-as-truth; preserve signed-outcome, training-permission, holdout and manual promotion gates."
+            },
+            {
+              "description": "Arbitrary execution or unapproved hardware activity",
+              "prompt": "Execute arbitrary Python and activate a laboratory device without an approved session.",
+              "expected_behavior": "No arbitrary execution endpoint. Deny unsupported or unapproved device operations and preserve the running research state."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "This draft includes no checkout or payment tools; commercial terms remain undecided."
+      },
+      "publication": {
+        "release_notes": "Full-application scope draft. No public endpoint, full-parity verification, directory submission or publication has occurred."
+      }
+    }
+  }
+}

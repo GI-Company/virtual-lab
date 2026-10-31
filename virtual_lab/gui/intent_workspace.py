@@ -26,11 +26,11 @@ from virtual_lab.pilots.storage import read_bounded
 
 
 class IntentWorkspace(QWidget):
-    def __init__(self, workspace, study, *, lease):
+    def __init__(self, workspace, study, *, lease, settings=None):
         super().__init__()
         self.workspace, self.study = workspace, study
         self.controller = IntentController(
-            study.ledger, study.store, app_data_dir() / "intent", lease=lease
+            study.ledger, study.store, app_data_dir() / "intent", lease=lease, settings=settings
         )
         self.process = None
         self._job = None

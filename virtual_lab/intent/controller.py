@@ -54,8 +54,11 @@ def parse(raw):
 
 
 class IntentController:
-    def __init__(self, ledger, store, root, *, lease):
+    def __init__(self, ledger, store, root, *, lease, settings=None):
         self.ledger, self.store, self.lease = ledger, store, lease
+        from virtual_lab.settings import SettingsRepository
+        self.settings_repository = settings.repository if settings else SettingsRepository(Path(ledger.db_path).parent)
+        self.settings_service = settings
         if not lease.active or lease.directory != checked_path(
             Path(ledger.db_path).parent
         ):
@@ -111,6 +114,11 @@ class IntentController:
                 "SELECT 1 FROM projects WHERE id=?", (project,)
             ).fetchone():
                 raise IntentError("Unknown approved training project")
+        if self.settings_service is not None and self.settings_service.busy:
+            raise IntentError('Cancel active inference or training before changing INTENT permissions')
+        settings = self.settings_repository.load().model_dump()
+        settings.update(predictions_enabled=policy.predictions_enabled, learning_enabled=policy.learning_enabled)
+        self.settings_repository.save(settings)
         self._event("INTENT_POLICY_CHANGED", {"policy": policy.model_dump()})
         return policy
 
@@ -148,6 +156,10 @@ class IntentController:
             if read_bounded(path, 2 * 1024 * 1024) != raw:
                 raise IntentError("Checkpoint integrity conflict")
         else:
+            import shutil
+            minimum = self.settings_repository.load().min_free_gib * 1024**3
+            if shutil.disk_usage(self.checkpoints).free - len(raw) < minimum:
+                raise IntentError('Insufficient free disk space for checkpoint publication')
             write_private(path, raw)
         return sha
 
@@ -258,6 +270,7 @@ class IntentController:
         if not self.policy().predictions_enabled:
             raise IntentError("INTENT predictions are disabled")
         model = self._model(model_id)
+        self.settings_repository.require('predictions', model['project_id'], experiment_id)
         exp = self._experiment(model, experiment_id)
         if exp["status"] != "active":
             raise IntentError("Prediction requires a planned active experiment")
@@ -525,6 +538,7 @@ class IntentController:
                 return {"committed": e["payload"]}
         outcome = self._outcome(model_id, outcome_id)
         p = outcome["payload"]
+        self.settings_repository.require('learning', model['project_id'], p['experiment_id'])
         if p["purpose"] != "train":
             raise IntentError("Holdout evidence may never enter replay or training")
         if not any(
@@ -540,6 +554,8 @@ class IntentController:
             "y": p["actual_normalized"],
             "example_id": outcome_id,
         }
+        if self.settings_service is not None:
+            self.settings_service.reserve(job_id)
         self._jobs[job_id] = {
             "model_id": model_id,
             "outcome_id": outcome_id,
@@ -550,6 +566,8 @@ class IntentController:
 
     def cancel_update(self, job_id):
         job = self._jobs.pop(job_id, None)
+        if self.settings_service is not None:
+            self.settings_service.release(job_id)
         if job:
             self._event(
                 "INTENT_UPDATE_CANCELLED",
@@ -572,6 +590,9 @@ class IntentController:
                 },
             )
             raise
+        finally:
+            if self.settings_service is not None:
+                self.settings_service.release(job_id)
 
     def _complete_update(self, job, raw):
         if len(raw) > 2 * 1024 * 1024:
@@ -586,7 +607,8 @@ class IntentController:
             raise IntentError(
                 "Training permission was withdrawn; worker result discarded"
             )
-        self._outcome(model_id, job["outcome_id"])
+        outcome = self._outcome(model_id, job["outcome_id"])
+        self.settings_repository.require('learning', model['project_id'], outcome['payload']['experiment_id'])
         for e in self.events(model_id):
             if (
                 e["event_type"] == "INTENT_MODEL_UPDATED"

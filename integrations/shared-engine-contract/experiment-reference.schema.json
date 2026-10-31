@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "instance_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Instance Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "experiment_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Experiment Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "instance_id",
+    "project_id",
+    "experiment_id"
+  ],
+  "title": "ExperimentRef",
+  "type": "object"
+}

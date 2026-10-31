@@ -1,0 +1,54 @@
+{
+  "format": "virtuallab-service-review-evidence-v1",
+  "scope": "Local synthetic qualification; no live GIC, ChatGPT or paired desktop account connection",
+  "source_base_commit": "258656c48b5722b6d95b2a8aeedb972ba1f5b205",
+  "locked_service_suite": {
+    "tests": "64",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "28.491"
+  },
+  "http_checks": {
+    "independent_http_clients": true,
+    "same_report_sha256": true,
+    "reconnect_cursor": true,
+    "cross_tenant_denial": true,
+    "anonymous_denial": true,
+    "mutations_denied": true,
+    "revoked_on_all_clients": true,
+    "research_files_unchanged": true,
+    "structured_audit": true
+  },
+  "versions": {
+    "starlette": "1.10.0",
+    "uvicorn": "0.54.0",
+    "PyJWT": "2.15.1",
+    "cryptography": "50.0.2",
+    "httpx": "0.28.1"
+  },
+  "dependency_audit": {
+    "packages_checked": 41,
+    "known_vulnerabilities": 0
+  },
+  "source_secret_scan": {
+    "passed": true,
+    "scanner": "detect-secrets 1.5.0",
+    "verification": "offline; no candidate sent to credential providers",
+    "reviewed_nonsecret_matches": 23,
+    "unexpected_findings": []
+  },
+  "source_secret_negative_check": {
+    "passed": true,
+    "synthetic_candidate_rejected": true,
+    "candidate_transmitted": false
+  },
+  "production_deployed": false,
+  "actual_accounts_connected": false,
+  "prior_desktop_core_validation": {
+    "passed": 578,
+    "skipped": 17,
+    "scope": "Earlier source snapshot; no new desktop behavior added during CI preparation"
+  },
+  "reproduce": "uv sync --locked --extra mcp --extra research-service --group service-test --group security; see docs/read-only-research-service.md"
+}

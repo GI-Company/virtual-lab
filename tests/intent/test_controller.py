@@ -488,3 +488,52 @@ def test_gui_cancellation_discards_result(context, qtbot, monkeypatch):
     qtbot.waitUntil(lambda: not panel.busy, timeout=15000)
     assert c.candidate(m) == initial and not c._jobs
     assert any(e["event_type"] == "INTENT_UPDATE_CANCELLED" for e in c.events(m))
+
+
+def test_central_settings_scope_cannot_be_bypassed_by_ledger_permission(context):
+    enable(context)
+    c, model, _, _ = context
+    value = c.settings_repository.load().model_dump()
+    value['project_rules'] = {'p': {'predictions': False}}
+    c.settings_repository.save(value)
+    with pytest.raises(PermissionError):
+        prediction(context)
+    assert not [e for e in c.events(model) if e['event_type']=='INTENT_PREDICTION_COMMITTED']
+
+
+def test_shared_resource_slot_and_revocation_before_training_commit(context):
+    from virtual_lab.settings import SettingsService
+    enable(context)
+    c, model_id, _, _ = context
+    freeze(context)
+    outcome=accepted(context)
+    c.settings_service=SettingsService(c.settings_repository)
+    c.settings_service.reserve('inference')
+    with pytest.raises(RuntimeError,match='active'):
+        c.prepare_update(model_id,outcome['event_id'])
+    c.settings_service.release('inference')
+    job=c.prepare_update(model_id,outcome['event_id'])
+    assert c.settings_service.busy
+    request=job['request']
+    model=MiniModel.from_state(request['state'])
+    metrics=model.fit_one(request['x'],request['y'],request['example_id'])
+    value=c.settings_repository.load().model_dump()
+    value['experiment_rules']={outcome['payload']['experiment_id']:{'learning':False}}
+    c.settings_repository.save(value)
+    active=c.active(model_id)
+    with pytest.raises(PermissionError):
+        c.complete_update(job['job_id'],canonical({'state':model.state(),'metrics':metrics}))
+    assert not c.settings_service.busy and c.active(model_id)==active
+    assert not [e for e in c.events(model_id) if e['event_type']=='INTENT_MODEL_UPDATED']
+
+
+def test_checkpoint_disk_gate_prevents_new_publication(context,monkeypatch):
+    import shutil
+    from types import SimpleNamespace
+    c, model, _, _ = context
+    before=set(c.checkpoints.iterdir())
+    monkeypatch.setattr(shutil,'disk_usage',lambda _:SimpleNamespace(free=0))
+    with pytest.raises(IntentError,match='disk'):
+        c.initialize('p',SCHEMA)
+    assert set(c.checkpoints.iterdir())==before
+    assert len(c.models('p'))==1

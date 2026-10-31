@@ -32,6 +32,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+research-service = ["starlette>=0.52,<2", "uvicorn>=0.34,<1", "PyJWT[crypto]>=2.15.1,<3"]
+mcp = ["mcp>=1.12,<2"]
 pilot = ["reportlab>=4,<6"]
 ai = [
     "google-genai>=0.2.2",
@@ -57,12 +59,18 @@ dev = [
 ]
 
 [project.scripts]
+virtuallab-research-service = "virtual_lab.integrations.research_service.server:main"
+virtuallab-mcp = "virtual_lab.integrations.mcp.server:main"
 virtuallab-ms-pilot = "virtual_lab.pilots.desktop:main"
 
 [project.urls]
 Homepage = "https://github.com/GI-Company/virtual-lab"
 Repository = "https://github.com/GI-Company/virtual-lab"
 Issues = "https://github.com/GI-Company/virtual-lab/issues"
+
+[dependency-groups]
+service-test = ["pytest>=8", "jsonschema>=4,<5", "httpx>=0.28,<1"]
+security = ["detect-secrets==1.5.0", "pip-audit==2.10.1"]
 
 [tool.hatch.version]
 path = "virtual_lab/version.py"
@@ -72,7 +80,7 @@ packages = ["virtual_lab"]
 exclude = ["**/test_*.py", "**/__pycache__/**", "**/*.pyc"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/virtual_lab", "/tests", "/scripts", "/docs", "/protocol", "/examples", "/README.md", "/pyproject.toml", "/uv.lock", "/release_manifest.json", "/start_virtuallab.sh", "/.github", "/.gitignore"]
+include = ["/virtual_lab", "/tests", "/scripts", "/docs", "/integrations", "/protocol", "/examples", "/README.md", "/pyproject.toml", "/uv.lock", "/release_manifest.json", "/start_virtuallab.sh", "/.github", "/.gitignore"]
 exclude = ["**/__pycache__/**", "**/*.pyc"]
 
 [tool.hatch.build.targets.sdist.force-include]
