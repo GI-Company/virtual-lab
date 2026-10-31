@@ -41,6 +41,7 @@ class CompareWorkspace(QWidget):
         self.left.currentIndexChanged.connect(self.render)
         self.right.currentIndexChanged.connect(self.render)
         workspace.activeExperimentChanged.connect(self.refresh)
+        workspace.activeProjectChanged.connect(self.refresh)
         workspace.observationCommitted.connect(self.refresh)
         self.refresh()
 
@@ -50,6 +51,8 @@ class CompareWorkspace(QWidget):
         db = ExperimentStore()
         try:
             for exp in db.list_experiments():
+                if not self.workspace.active_project_id or exp['project_id'] != self.workspace.active_project_id:
+                    continue
                 for obs in db.get_observations_for_experiment(exp['id']):
                     if obs.instrument_id == 'simulation':
                         self.runs[obs.observation_id] = (obs, f"{exp['label'] or exp['id'][:8]} · {obs.session_id[:8]}")

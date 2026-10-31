@@ -3,6 +3,7 @@ from typing import Optional
 from virtual_lab.gui.services.selection import ScientificSelection, SelectionKind
 
 class WorkspaceState(QObject):
+    activeProjectChanged = Signal(str)
     activeExperimentChanged = Signal(str)
     activeBranchChanged = Signal(str)
     selectedObjectChanged = Signal(object)
@@ -67,6 +68,10 @@ class WorkspaceState(QObject):
         self._current_result = value
         self.resultChanged.emit(value)
         
+    @property
+    def active_project_id(self):
+        return self._active_project_id
+
     @property
     def active_experiment(self):
         return self._active_experiment

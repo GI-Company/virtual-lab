@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QLineEdit, QPushButton, QFileDialog, QCheckBox, QPlainTextEdit, QTabWidget,
-    QListWidget, QListWidgetItem, QSplitter, QComboBox, QGroupBox, QScrollArea)
+    QListWidget, QListWidgetItem, QSplitter, QComboBox, QGroupBox, QScrollArea, QSizePolicy)
 import pyqtgraph as pg
 from virtual_lab.core.paths import app_data_dir
 from virtual_lab.pilots.datasets import MSDatasetService
@@ -22,6 +22,9 @@ class MSPilotWorkspace(QWidget):
         self.service = MSDatasetService(study_service.ledger, study_service.store, app_data_dir()/'ms-pilot-runs', lease=lease)
         self.selected_run = None
         self.validated = None
+        self._context_experiment_id = None
+        self._context_project_id = None
+        self._restoring_view = True
         layout = QVBoxLayout(self)
         title = QLabel('MS Workflow | Nonconfidential pilot')
         title.setStyleSheet('font-size: 20px; font-weight: bold;')
@@ -113,12 +116,13 @@ class MSPilotWorkspace(QWidget):
         spectrum = QWidget()
         spectrum_layout = QVBoxLayout(spectrum)
         self.plot = pg.PlotWidget()
+        self.plot.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Ignored)
         self.plot.setLabel('bottom', 'Recorded m/z')
         self.plot.setLabel('left', 'Intensity (units unspecified)')
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.showGrid(x=True, y=True, alpha=.2)
         self.plot.scene().sigMouseMoved.connect(self.peak_coordinates)
-        spectrum_layout.addWidget(self.plot)
+        spectrum_layout.addWidget(self.plot,1)
         self.coordinates = QLabel('Drag to pan; scroll to zoom; right-click for plot controls')
         spectrum_layout.addWidget(self.coordinates)
         self.log_scale = QCheckBox('Log intensity scale (zero values omitted from log display)')
@@ -171,6 +175,8 @@ class MSPilotWorkspace(QWidget):
         self.status.setTextFormat(Qt.PlainText)
         layout.addWidget(self.status)
         workspace.activeExperimentChanged.connect(self.refresh)
+        workspace.activeProjectChanged.connect(self.refresh)
+        self.tabs.currentChanged.connect(self.save_tab)
         self.refresh()
 
     def fail(self, exc):
@@ -261,31 +267,99 @@ class MSPilotWorkspace(QWidget):
 
     def refresh(self, *_):
         exp = self.workspace.active_experiment
-        self.context.setText('Experiment: ' + (exp.label if exp else 'Create and select one in Projects'))
+        self._restoring_view = True
+        experiment_id = exp.id if exp else None
+        if (
+            experiment_id != self._context_experiment_id
+            or self.workspace.active_project_id != self._context_project_id
+        ):
+            self._context_experiment_id = experiment_id
+            self._context_project_id = self.workspace.active_project_id
+            for key, field in self.fields.items():
+                if key == "pilot_id":
+                    field.setText("mild-biotec-initial-ms")
+                else:
+                    field.clear()
+            self.data_origin.setCurrentIndex(0)
+            for field in self.source_fields.values():
+                field.clear()
+            self.approval.setChecked(False)
+            self.source_group.setChecked(False)
+            self.reviewer.clear()
+            self.review_note.clear()
+            self.invalidate_preview()
+            self.status.setText(
+                "No MS dataset selected."
+                if exp
+                else "Create an experiment in the notebook to import MS data."
+            )
+        self.context.setText(
+            "Experiment: " + (exp.label if exp else "Create an experiment in the notebook")
+        )
         self.datasets.clear()
         self.selected_run = None
         if exp:
             for record in self.service.runs(exp.id):
-                item = QListWidgetItem(record['dataset_id'] + ' | ' + record['run_id'][:8])
-                item.setData(Qt.UserRole, record['run_id'])
+                item = QListWidgetItem(record["dataset_id"] + " | " + record["run_id"][:8])
+                item.setData(Qt.UserRole, record["run_id"])
                 self.datasets.addItem(item)
         self.history.clear()
         self.plot.clear()
         self.summary.clear()
         self.original.clear()
         self.normalized.clear()
+        view = self.study_service.experiment_view(exp.id) if exp else {}
+        self.tabs.blockSignals(True)
+        self.tabs.setCurrentIndex(
+            ("import", "spectrum", "files", "review").index(view.get("ms_tab_id", "import"))
+        )
+        self.tabs.blockSignals(False)
+        for index in range(self.datasets.count()):
+            if self.datasets.item(index).data(Qt.UserRole) == view.get(
+                "selected_ms_run_id"
+            ):
+                self.datasets.setCurrentRow(index)
+                break
+        self._restoring_view = False
+
+    def save_tab(self, index):
+        exp = self.workspace.active_experiment
+        if exp and not self._restoring_view:
+            self.study_service.save_experiment_view(
+                exp.id, ms_tab_id=("import", "spectrum", "files", "review")[index]
+            )
 
     def select_dataset(self, item, *_):
         self.selected_run = None
+        self.plot.clear()
+        self.summary.clear()
+        self.original.clear()
+        self.normalized.clear()
+        self.history.clear()
         if item is None:
+            self.status.setText("No MS dataset selected.")
             return
         try:
             run_id = item.data(Qt.UserRole)
+            exp = self.workspace.active_experiment
+            if exp is None or not any(
+                record["run_id"] == run_id for record in self.service.runs(exp.id)
+            ):
+                raise PilotError(
+                    "DATASET_SCOPE", "Select an MS dataset in the active experiment"
+                )
             manifest, contents, _ = self.service.read(run_id)
-            self.show_spectrum(contents['source.csv'], contents['peaks.csv'], manifest['intensity_units'])
+            self.show_spectrum(
+                contents["source.csv"], contents["peaks.csv"], manifest["intensity_units"]
+            )
             self.history.setPlainText(json.dumps(self.service.events(run_id), indent=2))
             self.selected_run = run_id
-            self.status.setText('Source and normalized checksums verified against the local ledger. Source authenticity unverified.')
+            exp = self.workspace.active_experiment
+            if exp and not self._restoring_view:
+                self.study_service.save_experiment_view(exp.id, selected_ms_run_id=run_id)
+            self.status.setText(
+                "Source and normalized checksums verified against the local ledger. Source authenticity unverified."
+            )
         except Exception as exc:
             self.fail(exc)
 

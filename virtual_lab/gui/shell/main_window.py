@@ -19,8 +19,9 @@ from virtual_lab.gui.shell.layout import make_workspace_scrollable
 
 
 class VirtualLabApplication(QMainWindow):
-    def __init__(self):
+    def __init__(self, *, profile='research'):
         super().__init__()
+        self.presentation_profile=profile
         from virtual_lab.core.paths import app_data_dir
         from virtual_lab.pilots.lease import WorkspaceLease
         self._workspace_lease = WorkspaceLease(app_data_dir())
@@ -206,7 +207,7 @@ class VirtualLabApplication(QMainWindow):
         self.compare = CompareWorkspace(self.workspace)
         
         from virtual_lab.gui.projects_workspace import ProjectsWorkspace
-        self.projects = ProjectsWorkspace(self.workspace, self.ledger)
+        self.projects = ProjectsWorkspace(self.workspace, self.ledger, restore=False)
         from virtual_lab.gui.calibration_workspace import CalibrationWorkspace
         self.calibration = CalibrationWorkspace(self.workspace, self.projects.service)
         from virtual_lab.gui.biological_workspace import BiologicalWorkspace
@@ -219,7 +220,7 @@ class VirtualLabApplication(QMainWindow):
         self.intent_panel = IntentWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
         self.tabs.addTab(self.intent_panel, "INTENT (experimental)")
         self.tabs.addTab(self.biological, "Biological objects")
-        self.workspace.biologicalDraftRequested.connect(lambda _: self.tabs.setCurrentWidget(self.biological))
+        self.workspace.biologicalDraftRequested.connect(lambda _: self._open_workspace(self.biological))
         self.tabs.addTab(self.world, "RHO reference")
         self.tabs.addTab(self.experiment, "Simulation")
         self.tabs.addTab(self.analysis, "Analysis")
@@ -240,20 +241,35 @@ class VirtualLabApplication(QMainWindow):
         self.tabs.addTab(self.compare, "Compare")
         for index in range(self.tabs.count()):
             make_workspace_scrollable(self.tabs.widget(index))
+        from virtual_lab.gui.shell.research_navigation import ResearchNavigation
+        main_layout.removeWidget(self.tabs)
+        self.navigation=ResearchNavigation(self.workspace,self.projects.service,self.tabs,{
+            'projects':self.projects,'ms_workflow':self.ms_pilot,'intent':self.intent_panel,
+            'biological':self.biological,'rho_reference':self.world,'simulation':self.experiment,
+            'analysis':self.analysis,'calibration':self.calibration_tabs,'assistant':self.ai_panel,
+            'instruments':self.instruments,'computational':self.computational,'evidence':self.evidence,
+            'provenance':self.provenance,'numerical':self.numerical,'compare':self.compare},
+            profile=self.presentation_profile,can_switch=self._can_switch_project)
+        main_layout.addWidget(self.navigation,1)
+        self.navigation.pageChanged.connect(self._navigation_changed)
+        self._navigation_changed()
+        self.start_listener_button=QPushButton('Start instrument listener')
+        self.start_listener_button.clicked.connect(self._start_instrument_listener)
+        self.instruments.layout().insertWidget(0,self.start_listener_button)
         
-        self.tabs.currentChanged.connect(self._tab_changed)
         self.projects.navigateRequested.connect(self._navigate)
         self.experiment.navigateRequested.connect(self._navigate)
         self.analysis.navigateRequested.connect(self._navigate)
         self.numerical.navigateRequested.connect(self._navigate)
         self.compare.navigateRequested.connect(self._navigate)
         self.evidence.navigateRequested.connect(self._navigate)
-        self.workspace.evidenceSelectionChanged.connect(lambda _: self.tabs.setCurrentWidget(self.evidence))
+        self.workspace.evidenceSelectionChanged.connect(lambda value: self._open_workspace(self.evidence) if value else None)
         self.workspace.resultChanged.connect(self._refresh_status)
         self.workspace.observationCommitted.connect(self._refresh_status)
         self.workspace.observationStaged.connect(self._refresh_status)
         self._refresh_status()
         self.workspace.activeExperimentChanged.connect(self._refresh_context)
+        self.workspace.activeProjectChanged.connect(self._refresh_context)
         self._refresh_context()
 
     def _enable_ai(self):
@@ -311,7 +327,7 @@ class VirtualLabApplication(QMainWindow):
                 self.btn_ai_drawer.blockSignals(True)
                 self.btn_ai_drawer.setChecked(False)
                 self.btn_ai_drawer.blockSignals(False)
-                self.tabs.setCurrentWidget(self.ai_panel)
+                self._open_workspace(self.ai_panel)
                 return
             self._place_ai_in_dock()
             self.ai_dock.show()
@@ -328,18 +344,55 @@ class VirtualLabApplication(QMainWindow):
         if not visible and getattr(self, "local_research", None) is not None:
             self._place_ai_in_tab()
 
-    def _tab_changed(self, *_):
-        if self.tabs.currentWidget() is self.instruments and not self.runtime.gateway.server.isListening():
+    def _start_instrument_listener(self):
+        if not self.runtime.gateway.server.isListening():
             if not self.runtime.gateway.start():
-                self.instruments.lbl_status.setText("Instrument listener could not start; port 8765 may be in use.")
+                self.instruments.lbl_status.setText(
+                    "Instrument listener could not start; port 8765 may be in use."
+                )
+                return
+        self.start_listener_button.setText("Instrument listener running")
+        self.start_listener_button.setEnabled(False)
+
+    def _can_switch_project(self):
+        return (
+            not self.intent_panel.busy
+            and not self.computational.busy
+            and self.experiment.controller.worker is None
+            and self.instruments.session_state
+            not in ("RECORDING", "FINALIZING_INTERRUPTED")
+            and not (
+                self.local_research
+                and self.local_research.agent_thread
+                and self.local_research.agent_thread.isRunning()
+            )
+        )
+
+    def _navigation_changed(self, *_):
+        workstation = self.navigation.stack.currentWidget() is self.navigation.workstation
+        for label in (self.project_label, self.experiment_label, self.ledger_status):
+            label.setVisible(workstation)
+        simulation_flow = workstation and self.navigation.domain_id in (
+            "general",
+            "physics_simulation",
+            "computational_biology",
+        )
+        self.pipeline_scroll.setVisible(simulation_flow)
+        self.pipeline_hint.setVisible(simulation_flow)
+
+    def _open_workspace(self, page):
+        for tool_id, widget in self.navigation.tools.items():
+            if widget is page:
+                self.navigation.action(lambda: self.navigation.open_tool(tool_id))
+                break
 
     def _navigate(self, name):
         if name == "Plan":
-            self.tabs.setCurrentWidget(self.projects)
+            self._open_workspace(self.projects)
             self.projects.notebook.setCurrentIndex(1)
             return
         if name == "Conclusion":
-            self.tabs.setCurrentWidget(self.projects)
+            self._open_workspace(self.projects)
             self.projects.notebook.setCurrentIndex(2)
             return
         target = {
@@ -352,12 +405,12 @@ class VirtualLabApplication(QMainWindow):
             "Provenance": self.provenance,
         }.get(name)
         if target is not None:
-            self.tabs.setCurrentWidget(target)
+            self._open_workspace(target)
 
     def _refresh_context(self, *_):
         exp = self.workspace.active_experiment
         project = next((p for p in self.projects.service.projects()
-                        if exp and p['id'] == exp.project_id), None)
+                        if p['id'] == self.workspace.active_project_id), None)
         self.project_label.setText('Project: ' + (project['name'] if project else 'None selected'))
         self.experiment_label.setText('Experiment: ' + ((exp.label or exp.id) if exp else 'Unassigned staging'))
         for label in (self.project_label, self.experiment_label):
@@ -372,10 +425,16 @@ class VirtualLabApplication(QMainWindow):
             sim_events = [e for e in all_events if e.get("event_type") in ("SIMULATION_SAVED", "DESIGN_SAVED")]
             exp = self.workspace.active_experiment
             obs = self.projects.service.store.get_observations_for_experiment(exp.id) if exp else []
-            imported_events = [e for e in all_events if e.get("event_type") == "STUDY_IMPORTED"]
+            project_experiments={e['id'] for e in self.projects.service.store.list_experiments() if self.workspace.active_project_id and e['project_id']==self.workspace.active_project_id}
+            runs=[r for r in runs if r.get('experiment_id') in project_experiments]
+            run_ids={r['id'] for r in runs}
+            sim_events=[e for e in sim_events if e['payload'].get('run_id') in run_ids]
+            imported_events = [e for e in all_events if e.get("event_type") == "STUDY_IMPORTED" and e['payload'].get('experiment_id') in project_experiments]
             if self.ledger is not None:
-                for row in self.ledger.conn.execute("SELECT event_type FROM ledger_events WHERE event_type = 'STUDY_IMPORTED'"):
-                    imported_events.append({"event_type": row[0]})
+                import json
+                for row in self.ledger.conn.execute("SELECT payload_json FROM ledger_events WHERE event_type = 'STUDY_IMPORTED'"):
+                    if json.loads(row[0]).get('experiment_id') in project_experiments:
+                        imported_events.append({"event_type": 'STUDY_IMPORTED'})
 
             if sim_events and imported_events and obs:
                 self.ledger_status.setText(f"{len(runs)} local simulation run(s) + {len(obs)} active study record(s) verified")
@@ -488,9 +547,19 @@ class VirtualLabApplication(QMainWindow):
 
 def run():
     import sys
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="VirtualLab discipline research desktop"
+    )
+    parser.add_argument(
+        "--profile", choices=("research", "academia"), default="research"
+    )
+    args = parser.parse_args()
     from PySide6.QtWidgets import QApplication
+
     app = QApplication(sys.argv)
-    window = VirtualLabApplication()
+    window = VirtualLabApplication(profile=args.profile)
     window.show()
     sys.exit(app.exec())
 

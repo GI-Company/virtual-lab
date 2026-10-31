@@ -32,6 +32,8 @@ class ExperimentController(QObject):
     runCancelled=Signal()
     def __init__(self,workspace):
         super().__init__(workspace)
+        from virtual_lab.gui.shell.gui_gc import ensure_gui_gc
+        ensure_gui_gc()
         self.workspace=workspace
         self.worker=None
         self.store=RunStore()

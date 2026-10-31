@@ -11,8 +11,9 @@ from virtual_lab.gui.shell.layout import make_workspace_scrollable
 
 
 class MSPilotWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, *, profile='research'):
         super().__init__()
+        self.presentation_profile=profile
         from virtual_lab.pilots.lease import WorkspaceLease
         self._workspace_lease = WorkspaceLease(app_data_dir())
         lease = self._workspace_lease
@@ -36,7 +37,7 @@ class MSPilotWindow(QMainWindow):
         root = app_data_dir()
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.ledger = GenesisLedger(str(root/'genesis.db'))
-        self.projects = ProjectsWorkspace(self.workspace, self.ledger)
+        self.projects = ProjectsWorkspace(self.workspace, self.ledger, restore=False)
         self.ms_pilot = MSPilotWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
         self.tabs = QTabWidget()
         self.tabs.addTab(self.projects, 'Projects')
@@ -44,9 +45,16 @@ class MSPilotWindow(QMainWindow):
         from virtual_lab.gui.intent_workspace import IntentWorkspace
         self.intent_panel = IntentWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
         self.tabs.addTab(self.intent_panel, 'INTENT (experimental)')
+        from virtual_lab.gui.provenance.provenance_workspace import ProvenanceWorkspace
+        self.provenance=ProvenanceWorkspace(self.workspace,ledger=self.ledger)
+        self.tabs.addTab(self.provenance,'Provenance')
         for index in range(self.tabs.count()):
             make_workspace_scrollable(self.tabs.widget(index))
-        self.setCentralWidget(self.tabs)
+        from virtual_lab.gui.shell.research_navigation import ResearchNavigation
+        self.navigation=ResearchNavigation(self.workspace,self.projects.service,self.tabs,
+            {'projects':self.projects,'ms_workflow':self.ms_pilot,'intent':self.intent_panel,'provenance':self.provenance},
+            profile=self.presentation_profile,can_switch=lambda:not self.intent_panel.busy)
+        self.setCentralWidget(self.navigation)
 
     def closeEvent(self, event):
         if self.intent_panel.busy:
@@ -60,8 +68,12 @@ class MSPilotWindow(QMainWindow):
 
 
 def main():
+    import argparse
+    parser=argparse.ArgumentParser(description='VirtualLab offline MS research workstation')
+    parser.add_argument('--profile',choices=('research','academia'),default='research')
+    args=parser.parse_args()
     app = QApplication.instance() or QApplication(sys.argv)
-    window = MSPilotWindow()
+    window = MSPilotWindow(profile=args.profile)
     window.show()
     return app.exec()
 

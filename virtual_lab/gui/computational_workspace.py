@@ -32,6 +32,7 @@ class ComputationalWorkspace(QWidget):
         self.context = QLabel()
         layout.addWidget(self.context)
         workspace.activeExperimentChanged.connect(self._update_context)
+        workspace.activeProjectChanged.connect(self._update_context)
         self._update_context()
         self.hypothesis = QLineEdit()
         self.hypothesis.setPlaceholderText("Hypothesis or research question for this run")
@@ -92,8 +93,18 @@ class ComputationalWorkspace(QWidget):
 
     def _update_context(self, *_):
         experiment = self.workspace.active_experiment
-        self.context.setText(f"Results will attach to experiment {experiment.id}" if experiment else
-                             "No active experiment: results will enter observation staging.")
+        self.context.setText(
+            f"Results will attach to experiment {experiment.id}"
+            if experiment
+            else "No active experiment: results will enter observation staging."
+        )
+        if hasattr(self, "history") and not self.busy:
+            self.completed_run = None
+            self._experiment_at_start = None
+            self.results.clear()
+            self.open_folder.setEnabled(False)
+            self.retry_registration.setEnabled(False)
+            self._refresh_history()
 
     def _genome_form(self):
         panel = QWidget()
@@ -315,6 +326,8 @@ class ComputationalWorkspace(QWidget):
             self.completed_run = CompletedRun(response["manifest_path"], response["sha256"])
             self._display_completed()
             self._register_completed()
+            if self.workspace.active_experiment is not self._experiment_at_start:
+                self.completed_run=None;self.results.clear();self.open_folder.setEnabled(False);self.retry_registration.setEnabled(False)
         except Exception:
             self.status.setText("Could not verify the completed result. No successful registration is confirmed.")
         self._refresh_history()
@@ -355,16 +368,51 @@ class ComputationalWorkspace(QWidget):
             "SELECT payload_json FROM ledger_events WHERE event_type IN "
             "('COMPUTATIONAL_PREDICTION_RECORDED', 'SIMULATOR_AUDIT_RECORDED') ORDER BY sequence DESC"
         ).fetchall()
+        database = ExperimentStore()
+        try:
+            project_id = self.workspace.active_project_id
+            experiments = {
+                e["id"]
+                for e in database.list_experiments()
+                if project_id and e["project_id"] == project_id
+            }
+            runs = {
+                o.session_id
+                for exp in experiments
+                for o in database.get_observations_for_experiment(exp)
+            }
+            staged = (
+                {r["session_id"] for r in database.list_staged()}
+                if not project_id
+                else set()
+            )
+        finally:
+            database.close()
         for row in rows:
             record = json.loads(row["payload_json"])
+            if record["run_id"] not in runs and record["run_id"] not in staged:
+                continue
             self.history.addItem(f"{record['instrument']} · {record['run_id'][:8]}", record)
 
     def _select_history(self, index):
         record = self.history.itemData(index)
         if not record:
             return
+        self._refresh_history()
+        if not any(self.history.itemData(i) == record for i in range(self.history.count())):
+            self.results.clear()
+            self.completed_run = None
+            self.open_folder.setEnabled(False)
+            return
+        self.history.setCurrentIndex(
+            next(
+                i for i in range(self.history.count()) if self.history.itemData(i) == record
+            )
+        )
         self._experiment_at_start = self.workspace.active_experiment
-        self.completed_run = CompletedRun(record["artifact_path"], record["artifact_sha256"])
+        self.completed_run = CompletedRun(
+            record["artifact_path"], record["artifact_sha256"]
+        )
         try:
             self._display_completed()
             self.retry_registration.setEnabled(False)
@@ -373,7 +421,9 @@ class ComputationalWorkspace(QWidget):
             self.completed_run = None
             self.open_folder.setEnabled(False)
             self.retry_registration.setEnabled(False)
-            self.status.setText("Integrity error: a saved artifact is missing or has changed.")
+            self.status.setText(
+                "Integrity error: a saved artifact is missing or has changed."
+            )
 
     def _open_folder(self):
         if self.completed_run:
