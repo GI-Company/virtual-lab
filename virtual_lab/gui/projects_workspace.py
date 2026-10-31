@@ -85,6 +85,7 @@ class ProjectsWorkspace(QWidget):
     def __init__(self, workspace, ledger, parent=None, store=None, *, restore=True):
         super().__init__(parent)
         self.workspace = workspace
+        self.context_switch_allowed = lambda: True
         self._restoring_view = True
         self.service = StudyService(workspace, ledger, store)
         outer = QVBoxLayout(self)
@@ -131,7 +132,7 @@ class ProjectsWorkspace(QWidget):
         self.experiments = QComboBox()
         form.addRow('Saved experiment', self.experiments)
         open_button = QPushButton('Open experiment')
-        open_button.clicked.connect(lambda: self._action(lambda: self.service.activate(self.experiments.currentData())))
+        open_button.clicked.connect(lambda: self._action(self._open_experiment))
         form.addRow(open_button)
         edit_question = QPushButton("Edit active research question")
         edit_question.clicked.connect(self._edit_question)
@@ -180,7 +181,7 @@ class ProjectsWorkspace(QWidget):
         import_button = QPushButton('Import study package')
         import_button.clicked.connect(self._import)
         unselect = QPushButton('Return to unassigned staging')
-        unselect.clicked.connect(lambda: self._action(lambda: self.service.activate(None)))
+        unselect.clicked.connect(lambda: self._action(self._return_to_staging))
         for button in (export, import_button, unselect): buttons.addWidget(button)
         layout.addLayout(buttons)
         self.status = QLabel('Study packages verify stored bytes, not scientific validity or publisher identity.')
@@ -204,6 +205,18 @@ class ProjectsWorkspace(QWidget):
         self.title.setText("Experiment notebook")
         self.setup_form.setRowVisible(0, False)
         self.setup_form.setRowVisible(1, False)
+
+    def _require_context_switch(self):
+        if not self.context_switch_allowed():
+            raise ValueError('Finish or cancel the active run/recording before changing experiment or leaving this project.')
+
+    def _open_experiment(self):
+        self._require_context_switch()
+        self.service.activate(self.experiments.currentData())
+
+    def _return_to_staging(self):
+        self._require_context_switch()
+        self.service.activate(None)
 
     def set_available_tools(self, tool_ids):
         for name,tool_id in {'Simulation':'simulation','Analysis':'analysis','Compare':'compare'}.items():
@@ -365,6 +378,7 @@ class ProjectsWorkspace(QWidget):
         self.project_name.clear(); self.refresh_projects(project_id)
 
     def _create_experiment(self):
+        self._require_context_switch()
         exp_id = self.service.create_experiment(self.projects.currentData(), self.experiment_name.text(), self.question.text())
         self._refresh_experiments()
         self.experiments.setCurrentIndex(self.experiments.findData(exp_id))
@@ -458,6 +472,7 @@ class ProjectsWorkspace(QWidget):
 
     def _import(self):
         def run():
+            self._require_context_switch()
             self.service.import_study(self._package_path())
             self.refresh_projects(self.workspace.active_experiment.project_id)
             self.refresh_results()

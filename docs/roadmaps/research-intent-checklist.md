@@ -42,6 +42,16 @@ Scope decision: implement in reviewable milestones. Complete BSA verification/im
 - [x] Test project switching, reopen/restart and absence of cross-project observations.
 - [x] Keep Research and Academia presentation profiles on common core packages.
 
+## Milestone 3 follow-up before settings work (completed locally)
+
+- [x] Stress the full desktop on native macOS with Python 3.11 and 3.12, real simulation workers and unchanged GC timer/thresholds.
+- [x] Record GUI-only collections, artifact verification, project/window reopen, inactive AI/learning/listeners and GC policy restoration.
+- [x] Refine discipline icons/tiles, availability badges, recent-project cards and purposeful empty-library actions.
+- [x] Add a permanent read-only Settings overview without claiming the Milestone 4 provider/policy work is implemented.
+- [x] Close notebook context-switch guard bypasses and test rejection before persistence.
+
+See [follow-up scope and reproducible stress commands](../milestone3-followup.md). Bounded native stress is not independent usability, Windows or laboratory acceptance.
+
 ## Milestone 4: Central settings and inference providers (next)
 
 - [ ] Versioned settings repository and migrations, independent of scattered environment changes.
