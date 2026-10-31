@@ -36,7 +36,7 @@ class ResearchNavigation(QWidget):
     pageChanged = Signal(str)
 
     def __init__(
-        self, workspace, study, tabs, tools, *, profile="research", can_switch=None
+        self, workspace, study, tabs, tools, *, profile="research", can_switch=None, settings_service=None
     ):
         super().__init__()
         from virtual_lab.gui.shell.gui_gc import ensure_gui_gc
@@ -50,6 +50,7 @@ class ResearchNavigation(QWidget):
             tabs,
             tools,
         )
+        self.settings_service = settings_service
         self.profile = PROFILES[profile]
         self.can_switch = can_switch or (lambda: True)
         self.project_id = None
@@ -336,12 +337,15 @@ class ResearchNavigation(QWidget):
         return page
 
     def _build_settings(self):
+        if self.settings_service is not None:
+            from virtual_lab.gui.shell.settings_center import SettingsCenter
+            return SettingsCenter(self.settings_service, intent=self.tools.get('intent'), workspace=self.workspace)
         page = QWidget()
         layout = QVBoxLayout(page)
         self._heading(
             layout,
             "Settings",
-            "Current workspace status. Unified preferences and provider configuration are planned for Milestone 4.",
+            "Offline pilot workspace status. Provider management is available in the full research desktop.",
         )
         form = QFormLayout()
         self.settings_values = {}
@@ -377,6 +381,13 @@ class ResearchNavigation(QWidget):
         return page
 
     def show_settings(self):
+        if self.settings_service is not None:
+            self.settings.reload()
+            self.stack.setCurrentWidget(self.settings)
+            self.breadcrumb.setText(self.profile.title + ' / Settings Center')
+            self._state('settings')
+            self.pageChanged.emit('settings')
+            return
         values = {
             "profile": self.profile.title,
             "location": str(Path(self.study.store._db_path).parent),

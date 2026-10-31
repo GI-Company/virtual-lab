@@ -135,3 +135,17 @@ def test_raw_sensor_session_can_be_reviewed_cited_and_transferred(tmp_path, monk
     original=Path(obs.artifact_path).read_bytes()
     with pytest.raises(FileExistsError): store.begin('synthetic-test-session','test-device',{})
     assert Path(obs.artifact_path).read_bytes()==original
+
+
+def test_central_export_restriction_precedes_publication(tmp_path,monkeypatch):
+    from virtual_lab.settings import SettingsRepository
+    svc=study(tmp_path/'source',monkeypatch)
+    obs=run(svc)
+    repo=SettingsRepository(Path(svc.ledger.db_path).parent)
+    s=repo.load().model_dump()
+    s['experiment_rules']={svc.workspace.active_experiment.id:{'exports':False}}
+    repo.save(s)
+    for destination,fn in [(tmp_path/'blocked.csv',lambda p:svc.export_result_csv(obs.observation_id,p)),
+                           (tmp_path/'blocked.vlab-study',svc.export_study)]:
+        with pytest.raises(PermissionError): fn(destination)
+        assert not destination.exists()

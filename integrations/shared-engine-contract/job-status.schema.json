@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "virtuallab-job-v1",
+      "default": "virtuallab-job-v1",
+      "title": "Format",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "RUNNING",
+        "CANCELLING",
+        "COMPLETED",
+        "CANCELLED",
+        "FAILED",
+        "INTERRUPTED"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "result_observation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Observation Id"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "experiment_id",
+    "state"
+  ],
+  "title": "JobStatus",
+  "type": "object"
+}

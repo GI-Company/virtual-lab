@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "instance_id": {
+      "title": "Instance Id",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "sequence": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "instance_id",
+    "project_id"
+  ],
+  "title": "ChangeCursor",
+  "type": "object"
+}

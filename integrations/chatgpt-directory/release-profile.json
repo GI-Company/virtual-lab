@@ -1,0 +1,41 @@
+{
+  "product_scope": "Full VirtualLab application, not the minimal MS snapshot adapter",
+  "publisher_name": "Global Intent Company",
+  "support_email": "cory.tortorici@globalintentcompany.space",
+  "proposed_product_url": "https://globalintentcompany.space/virtual-lab",
+  "proposed_support_url": "https://globalintentcompany.space/virtuallab/support",
+  "proposed_privacy_url": "https://globalintentcompany.space/virtuallab/privacy",
+  "proposed_terms_url": "https://globalintentcompany.space/virtuallab/terms",
+  "proposed_mcp_url": "https://api.globalintentcompany.space/mcp",
+  "url_status": "PROPOSED ONLY. Domain control, live routes and publication have not been verified.",
+  "release_gates": {
+    "full_feature_parity": false,
+    "web_workspace_verified": false,
+    "account_and_tenant_isolation": false,
+    "desktop_companion_verified": false,
+    "publisher_identity_verified": false,
+    "domain_control_verified": false,
+    "public_https_mcp_verified": false,
+    "product_support_pages_published": false,
+    "privacy_and_terms_approved_and_published": false,
+    "dataset_and_software_rights_confirmed": false,
+    "chatgpt_end_to_end_review_cases_passed": false,
+    "plugin_walkthrough_url_available": false
+  },
+  "publication_status": "NOT SUBMITTED; NOT SEARCHABLE",
+  "scope_confirmed_by_user": "Entire application",
+  "notes": [
+    "The public BSA snapshot proof of concept is not the full-application release.",
+    "The contact email was supplied by the user; no email has been sent.",
+    "Proposed domains are derived from the supplied email, not evidence of verified website ownership."
+  ],
+  "experience": "Both: full interactive ChatGPT workspace and paired desktop, sharing projects and research engine",
+  "existing_website": {
+    "product_url": "https://globalintentcompany.space/virtual-lab",
+    "demo_url": "https://globalintentcompany.space/virtual-lab/demo",
+    "observed": "Public pages verified in the browser; online demo entry is paid-access gated.",
+    "owner_status": "Owner says web adaptation is less advanced and is being developed.",
+    "code_repository": "GI-Company/globalintentcompany",
+    "integration_rule": "Reuse the existing web client and its accounts/entitlements; no website changes were deployed here."
+  }
+}

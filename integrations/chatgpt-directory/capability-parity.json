@@ -1,0 +1,370 @@
+{
+  "target": "Entire existing VirtualLab application",
+  "domains": [
+    {
+      "id": "mass_spectrometry",
+      "title": "Mass Spectrometry",
+      "tools": [
+        "projects",
+        "intent",
+        "provenance",
+        "ms_workflow",
+        "ms_identification"
+      ]
+    },
+    {
+      "id": "molecular_biology",
+      "title": "Molecular Biology",
+      "tools": [
+        "projects",
+        "intent",
+        "provenance",
+        "biological",
+        "rho_reference"
+      ]
+    },
+    {
+      "id": "computational_biology",
+      "title": "Computational Biology",
+      "tools": [
+        "projects",
+        "intent",
+        "provenance",
+        "computational",
+        "simulation",
+        "analysis"
+      ]
+    },
+    {
+      "id": "physics_simulation",
+      "title": "Physics & Simulation",
+      "tools": [
+        "projects",
+        "intent",
+        "provenance",
+        "simulation",
+        "analysis",
+        "calibration",
+        "numerical",
+        "compare"
+      ]
+    },
+    {
+      "id": "instruments_sensors",
+      "title": "Instruments & Sensors",
+      "tools": [
+        "projects",
+        "intent",
+        "provenance",
+        "instruments"
+      ]
+    },
+    {
+      "id": "data_analysis",
+      "title": "Data & Research Analysis",
+      "tools": [
+        "projects",
+        "intent",
+        "provenance",
+        "analysis",
+        "evidence",
+        "compare",
+        "numerical"
+      ]
+    },
+    {
+      "id": "general",
+      "title": "General research",
+      "tools": [
+        "projects",
+        "intent",
+        "provenance",
+        "simulation",
+        "analysis",
+        "evidence",
+        "compare"
+      ]
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "projects",
+      "title": "Experiments & notebook",
+      "desktop_status": "enabled",
+      "existing_service": "StudyService",
+      "full_plugin_scope": "project/experiment/notebook CRUD, plans, conclusions and portable study exchange",
+      "execution_location": "server",
+      "permission_contract": "read + explicit writes",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "ms_workflow",
+      "title": "MS Workflow",
+      "desktop_status": "enabled",
+      "existing_service": "MSDatasetService",
+      "full_plugin_scope": "imports, spectrum inspection, integrity/reprocessing/challenge/review and hashed reports",
+      "execution_location": "server or companion",
+      "permission_contract": "read, upload and authorized export",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "intent",
+      "title": "INTENT",
+      "desktop_status": "experimental",
+      "existing_service": "IntentController",
+      "full_plugin_scope": "prediction, signed outcomes, holdout, training candidates, evaluation, promotion and rollback",
+      "execution_location": "server worker or companion",
+      "permission_contract": "separate prediction/learning grants, trusted reviews and explicit promotion",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "biological",
+      "title": "Biological objects",
+      "desktop_status": "experimental",
+      "existing_service": "biological model services + StudyService.save_biological_run",
+      "full_plugin_scope": "biological object configuration, runs, saved results and experimental labels",
+      "execution_location": "server worker",
+      "permission_contract": "explicit modeled run; no measured-evidence substitution",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "rho_reference",
+      "title": "RHO reference",
+      "desktop_status": "experimental",
+      "existing_service": "reference assets + mapping service",
+      "full_plugin_scope": "rhodopsin reference visualization and residue inspection",
+      "execution_location": "web component",
+      "permission_contract": "read; reference limitations retained",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "simulation",
+      "title": "Simulation",
+      "desktop_status": "experimental",
+      "existing_service": "RunConfig/run_simulation + study result persistence",
+      "full_plugin_scope": "model parameters, actual numerical run, cancellation and persisted SIMULATED result",
+      "execution_location": "server worker",
+      "permission_contract": "authorized run and bounded resources",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "analysis",
+      "title": "Analysis",
+      "desktop_status": "enabled",
+      "existing_service": "research_outputs + saved simulation arrays",
+      "full_plugin_scope": "plots, distributions, sensitivity summaries and trajectories",
+      "execution_location": "server + web component",
+      "permission_contract": "read scoped saved outputs",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "calibration",
+      "title": "Calibration",
+      "desktop_status": "experimental",
+      "existing_service": "calibration.decay + maturation services",
+      "full_plugin_scope": "benchmark fitting, uploaded measurements, calibration/evaluation artifacts",
+      "execution_location": "server worker",
+      "permission_contract": "explicit fit/save; experimental scope retained",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "assistant",
+      "title": "AI assistance",
+      "desktop_status": "experimental",
+      "existing_service": "SettingsService + provider workers",
+      "full_plugin_scope": "provider routing, credentials, model selection, inference and cancellation",
+      "execution_location": "server or desktop companion",
+      "permission_contract": "independent assistant permission and route policy",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "instruments",
+      "title": "Instruments & sensors",
+      "desktop_status": "experimental",
+      "existing_service": "InstrumentGateway + supported providers",
+      "full_plugin_scope": "discovery/status/calibration, supported acquisition and saved measurements",
+      "execution_location": "desktop companion",
+      "permission_contract": "paired device, explicit session permission; no arbitrary actuation",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "computational",
+      "title": "Computational biology",
+      "desktop_status": "experimental",
+      "existing_service": "computational.requests/adapters/artifacts",
+      "full_plugin_scope": "AlphaGenome, AlphaFold DB and BitVision workflows and artifacts",
+      "execution_location": "server worker or companion",
+      "permission_contract": "provider credentials, data-use policy and supported adapter",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "evidence",
+      "title": "Evidence",
+      "desktop_status": "enabled",
+      "existing_service": "EvidenceStore + study observation services",
+      "full_plugin_scope": "curated and project evidence inspection, references and evidence states",
+      "execution_location": "server",
+      "permission_contract": "tenant/project-scoped reads",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "provenance",
+      "title": "Provenance",
+      "desktop_status": "enabled",
+      "existing_service": "GenesisLedger + verification services",
+      "full_plugin_scope": "event history, chain/artifact verification and evidence linkage",
+      "execution_location": "server-owned ledger",
+      "permission_contract": "scoped reads; no direct ledger editing",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "numerical",
+      "title": "Numerical checks",
+      "desktop_status": "enabled",
+      "existing_service": "numerical verification services",
+      "full_plugin_scope": "DOP853 comparison and numerical certificates tied to actual saved runs",
+      "execution_location": "server worker",
+      "permission_contract": "bounded verification; numerical is not biological validation",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "compare",
+      "title": "Compare simulations",
+      "desktop_status": "enabled",
+      "existing_service": "research_outputs.compare_simulations",
+      "full_plugin_scope": "compatible saved-run comparison and displayed assumptions",
+      "execution_location": "server + web component",
+      "permission_contract": "same tenant/project and compatible result schemas",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Real service-backed workflow, not a mock response",
+        "Desktop and plugin persistence agree",
+        "Tenant/project isolation and revocation",
+        "Cancellation/restart and artifact integrity",
+        "ChatGPT desktop/mobile UI and model-readable output"
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "Settings Center",
+      "desktop_status": "enabled",
+      "existing_service": "SettingsRepository/SettingsService",
+      "full_plugin_scope": "General, AI & Models, INTENT, Monitor, Privacy, Performance and MCP access",
+      "execution_location": "server policy + desktop companion preferences",
+      "permission_contract": "owner/admin edits; independent persistent switches and restrictive scopes",
+      "full_plugin_status": "NOT_IMPLEMENTED_OR_VERIFIED",
+      "required_acceptance": [
+        "Settings survive restart",
+        "Secrets never returned to ChatGPT",
+        "Revocation blocks jobs and results",
+        "No automatic provider or listener activation"
+      ]
+    }
+  ],
+  "unavailable_desktop_features": [
+    {
+      "id": "ms_identification",
+      "title": "MS/MS compound identification",
+      "note": "Not implemented by the CSV MS pilot."
+    }
+  ],
+  "publication_rule": "Do not submit the full-app listing until every implemented desktop workspace has passed its plugin parity acceptance."
+}

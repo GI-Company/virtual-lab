@@ -127,3 +127,16 @@ def test_report_checksum_file_cannot_reference_outside_files(tmp_path,name):
     checksum=tmp_path/'report.sha256'
     checksum.write_text('0'*64+'  '+name+'\n')
     with pytest.raises(ValueError): verify_report_files(checksum)
+
+
+def test_ms_export_settings_restriction_precedes_publication(service,tmp_path):
+    from virtual_lab.settings import SettingsRepository
+    source=tmp_path/'synthetic.csv'; source.write_text('mz,intensity\n100,1\n101,2\n')
+    obs=service.import_csv(source,experiment_id='exp',dataset_id='synthetic-policy',sample_id='synthetic',
+        instrument_id='fixture',operator_id='tester',approved_nonconfidential=True)
+    repo=SettingsRepository(tmp_path)
+    s=repo.load().model_dump(); s['allow_exports']=False; repo.save(s)
+    before=len(service.events(obs.session_id))
+    with pytest.raises(PermissionError): service.export_report(obs.session_id,tmp_path/'blocked.json')
+    assert not (tmp_path/'blocked.json').exists()
+    assert len(service.events(obs.session_id))==before

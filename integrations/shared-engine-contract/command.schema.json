@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "ExperimentRef": {
+      "additionalProperties": false,
+      "properties": {
+        "instance_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Instance Id",
+          "type": "string"
+        },
+        "project_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "experiment_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Experiment Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "instance_id",
+        "project_id",
+        "experiment_id"
+      ],
+      "title": "ExperimentRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "virtuallab-command-v1",
+      "default": "virtuallab-command-v1",
+      "title": "Format",
+      "type": "string"
+    },
+    "instance_id": {
+      "title": "Instance Id",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "instance.info",
+        "projects.list",
+        "project.create",
+        "experiments.list",
+        "experiment.create",
+        "experiment.get",
+        "plan.save",
+        "conclusion.save",
+        "observations.list",
+        "result.get",
+        "changes.list",
+        "simulation.submit",
+        "job.get",
+        "job.cancel",
+        "simulation.compare",
+        "spectrum.import",
+        "spectrum.get"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "reference": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExperimentRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    }
+  },
+  "required": [
+    "instance_id",
+    "operation"
+  ],
+  "title": "ResearchCommand",
+  "type": "object"
+}

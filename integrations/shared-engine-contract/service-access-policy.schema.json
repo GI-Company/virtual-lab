@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "Grant": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "default": false,
+          "title": "Changes",
+          "type": "boolean"
+        },
+        "metadata": {
+          "default": false,
+          "title": "Metadata",
+          "type": "boolean"
+        },
+        "project_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "reports": {
+          "default": false,
+          "title": "Reports",
+          "type": "boolean"
+        },
+        "research_access": {
+          "default": false,
+          "title": "Research Access",
+          "type": "boolean"
+        },
+        "spectrum": {
+          "default": false,
+          "title": "Spectrum",
+          "type": "boolean"
+        },
+        "subject": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Subject",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject",
+        "tenant_id",
+        "project_id"
+      ],
+      "title": "Grant",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "default": false,
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "format": {
+      "const": "virtuallab-service-access-v1",
+      "default": "virtuallab-service-access-v1",
+      "title": "Format",
+      "type": "string"
+    },
+    "grants": {
+      "items": {
+        "$ref": "#/$defs/Grant"
+      },
+      "maxItems": 10000,
+      "title": "Grants",
+      "type": "array"
+    },
+    "instance_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Instance Id",
+      "type": "string"
+    },
+    "revoked_token_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10000,
+      "title": "Revoked Token Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "instance_id"
+  ],
+  "title": "AccessPolicy",
+  "type": "object"
+}

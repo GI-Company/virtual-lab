@@ -13,7 +13,8 @@ class LocalResearchPolicyException(Exception):
     pass
 
 class PolicyEngine:
-    def __init__(self, registry: ToolRegistry, genesis: AgentGenesisRecorder, local_research_mode: bool = True):
+    def __init__(self, registry: ToolRegistry, genesis: AgentGenesisRecorder, local_research_mode: bool = True, settings=None):
+        self.settings = settings
         self.registry = registry
         self.genesis = genesis
         self.local_research_mode = local_research_mode
@@ -23,6 +24,10 @@ class PolicyEngine:
         self._executors[tool_name] = executor
 
     def execute_tool(self, episode_id: str, tool_name: str, args: Dict[str, Any]) -> Any:
+        if self.settings is not None:
+            context = self.settings.context()
+            self.settings.repository.require('assistant', *context)
+            self.settings.repository.require('tools', *context)
         schema = self.registry.get_tool(tool_name)
         
         # Local Research Mode Enforcement
@@ -86,7 +91,11 @@ class PolicyEngine:
         return decision
 
     def execute_approved_action(self, episode_id: str, proposal_id: str, tool_name: str, args: Dict[str, Any]):
-        # This bypasses the typical interception because it's invoked by the human gateway
+        if self.settings is not None:
+            context = self.settings.context()
+            self.settings.repository.require('assistant', *context)
+            self.settings.repository.require('tools', *context)
+        # This path still requires the existing human approval workflow.
         try:
             if tool_name in self._executors:
                 result = self._executors[tool_name](**args)

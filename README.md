@@ -10,7 +10,13 @@ Install `.[cockpit]` and launch with `python -m virtual_lab.main`. Start with th
 
 **MS workflow pilot:** [local installation, CSV contract, provenance, reports and limitations](docs/pilots/mild-biotec-ms-pilot.md). Launch the dedicated offline panel with `virtuallab-ms-pilot` after installing the locked `cockpit` and `pilot` extras.
 
-**Experimental INTENT milestone:** [guarded local numerical controller and BSA verification](docs/intent-experiment-controller.md), with the [complete architecture task list](docs/roadmaps/research-intent-checklist.md). Predictions and learning default off. Institutional reviewer provisioning, central provider settings and shared-instance collaboration remain gated future work.
+**Experimental INTENT milestone:** [guarded local numerical controller and BSA verification](docs/intent-experiment-controller.md), with the [complete architecture task list](docs/roadmaps/research-intent-checklist.md). Predictions and learning default off. The full desktop now includes a [Settings Center](docs/settings-center.md) with persistent switches, explicit provider routes and cancellable text adapters. Live provider qualification, institutional reviewer provisioning and shared-instance collaboration remain separate gates.
+
+**Shared application engine:** [Qt-independent research services, scoped commands, numerical jobs and project change cursors](docs/shared-research-engine.md). Desktop compatibility is preserved; connection of the developing website and full ChatGPT workspace remains in progress.
+
+**Read-only research service:** [authenticated owner-thread HTTP adapter, synthetic qualification and source review package](docs/read-only-research-service.md). Local tests cover report parity, cross-tenant denial and revocation. Production account integration, HTTPS hosting and desktop/ChatGPT pairing remain separate gates.
+
+**MCP integration prototype:** [read-only public MS snapshots, per-project sharing controls and ChatGPT connection gates](docs/virtuallab-mcp-prototype.md). Real local MCP calls are verified; external ChatGPT connection and hosted laboratory authentication remain separate work.
 
 **Discipline navigation:** [Home, project libraries, saved workstations and Research/Academia profiles](docs/research-discipline-navigation.md). Existing projects migrate to General research with their evidence preserved.
 

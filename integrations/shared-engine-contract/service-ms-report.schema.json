@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "AcceptanceCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT RUN"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "status",
+        "detail"
+      ],
+      "title": "AcceptanceCheck",
+      "type": "object"
+    },
+    "BasePeak": {
+      "additionalProperties": false,
+      "properties": {
+        "intensity": {
+          "title": "Intensity",
+          "type": "string"
+        },
+        "mz": {
+          "title": "Mz",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mz",
+        "intensity"
+      ],
+      "title": "BasePeak",
+      "type": "object"
+    },
+    "ExperimentRef": {
+      "additionalProperties": false,
+      "properties": {
+        "experiment_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Experiment Id",
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Instance Id",
+          "type": "string"
+        },
+        "project_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "instance_id",
+        "project_id",
+        "experiment_id"
+      ],
+      "title": "ExperimentRef",
+      "type": "object"
+    },
+    "Summary": {
+      "additionalProperties": false,
+      "properties": {
+        "base_peak": {
+          "$ref": "#/$defs/BasePeak"
+        },
+        "duplicate_mz_count": {
+          "minimum": 0,
+          "title": "Duplicate Mz Count",
+          "type": "integer"
+        },
+        "mz_max": {
+          "title": "Mz Max",
+          "type": "string"
+        },
+        "mz_min": {
+          "title": "Mz Min",
+          "type": "string"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "peak_count": {
+          "minimum": 1,
+          "title": "Peak Count",
+          "type": "integer"
+        },
+        "total_intensity": {
+          "title": "Total Intensity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "peak_count",
+        "mz_min",
+        "mz_max",
+        "base_peak",
+        "total_intensity",
+        "duplicate_mz_count",
+        "note"
+      ],
+      "title": "Summary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_checks": {
+      "items": {
+        "$ref": "#/$defs/AcceptanceCheck"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "title": "Acceptance Checks",
+      "type": "array"
+    },
+    "data_origin": {
+      "enum": [
+        "synthetic",
+        "public_reference",
+        "laboratory_supplied",
+        "unspecified"
+      ],
+      "title": "Data Origin",
+      "type": "string"
+    },
+    "epistemic_state": {
+      "const": "UNKNOWN",
+      "default": "UNKNOWN",
+      "title": "Epistemic State",
+      "type": "string"
+    },
+    "format": {
+      "const": "virtuallab-service-ms-report-v1",
+      "default": "virtuallab-service-ms-report-v1",
+      "title": "Format",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "normalized_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Normalized Sha256",
+      "type": "string"
+    },
+    "observation_id": {
+      "title": "Observation Id",
+      "type": "string"
+    },
+    "processing_version": {
+      "title": "Processing Version",
+      "type": "string"
+    },
+    "reference": {
+      "$ref": "#/$defs/ExperimentRef"
+    },
+    "review_status": {
+      "enum": [
+        "approved",
+        "rejected",
+        "not_reviewed"
+      ],
+      "title": "Review Status",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "software_version": {
+      "title": "Software Version",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "verification_scope": {
+      "title": "Verification Scope",
+      "type": "string"
+    },
+    "workflow_check_status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INCOMPLETE"
+      ],
+      "title": "Workflow Check Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reference",
+    "observation_id",
+    "run_id",
+    "data_origin",
+    "source_sha256",
+    "normalized_sha256",
+    "manifest_sha256",
+    "processing_version",
+    "software_version",
+    "summary",
+    "acceptance_checks",
+    "workflow_check_status",
+    "review_status",
+    "verification_scope"
+  ],
+  "title": "SharedMSReport",
+  "type": "object"
+}

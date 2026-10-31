@@ -53,6 +53,9 @@ class VirtualLabApplication(QMainWindow):
         
         # Initialize Unified Runtime
         self.runtime = create_virtual_lab_runtime()
+        self.settings_service = self.runtime.settings
+        self.settings_service.context = lambda: (self.workspace.active_project_id,
+            self.workspace.active_experiment.id if self.workspace.active_experiment else None)
         self.ledger = self.runtime.ledger
         self.evidence_store = self.runtime.evidence_store
         
@@ -217,7 +220,7 @@ class VirtualLabApplication(QMainWindow):
         self.tabs.addTab(self.projects, "Projects")
         self.tabs.addTab(self.ms_pilot, "MS Workflow")
         from virtual_lab.gui.intent_workspace import IntentWorkspace
-        self.intent_panel = IntentWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease)
+        self.intent_panel = IntentWorkspace(self.workspace, self.projects.service, lease=self._workspace_lease, settings=self.settings_service)
         self.tabs.addTab(self.intent_panel, "INTENT (experimental)")
         self.tabs.addTab(self.biological, "Biological objects")
         self.workspace.biologicalDraftRequested.connect(lambda _: self._open_workspace(self.biological))
@@ -249,8 +252,9 @@ class VirtualLabApplication(QMainWindow):
             'analysis':self.analysis,'calibration':self.calibration_tabs,'assistant':self.ai_panel,
             'instruments':self.instruments,'computational':self.computational,'evidence':self.evidence,
             'provenance':self.provenance,'numerical':self.numerical,'compare':self.compare},
-            profile=self.presentation_profile,can_switch=self._can_switch_project)
+            profile=self.presentation_profile,can_switch=self._can_switch_project, settings_service=self.settings_service)
         main_layout.addWidget(self.navigation,1)
+        self.settings_service.changed = self._settings_changed
         self.navigation.pageChanged.connect(self._navigation_changed)
         self._navigation_changed()
         self.start_listener_button=QPushButton('Start instrument listener')
@@ -272,7 +276,19 @@ class VirtualLabApplication(QMainWindow):
         self.workspace.activeProjectChanged.connect(self._refresh_context)
         self._refresh_context()
 
+    def _settings_changed(self):
+        permitted = self.settings_service.repository.load().assistant_enabled
+        if not permitted:
+            self.workspace.ai_state = 'off'
+        if self.local_research is not None:
+            self.local_research._refresh_vertex_status()
+        self.ai_enable_button.setText('Open configured AI assistance' if permitted else 'Configure optional AI assistance in Settings')
+
     def _enable_ai(self):
+        if not self.settings_service.repository.load().assistant_enabled:
+            self.navigation.show_settings()
+            self.ai_status.setText('Enable AI and configure a permitted provider in Settings Center.')
+            return
         if self.local_research is not None:
             return
         try:
@@ -356,7 +372,8 @@ class VirtualLabApplication(QMainWindow):
 
     def _can_switch_project(self):
         return (
-            not self.intent_panel.busy
+            not self.settings_service.busy
+            and not self.intent_panel.busy
             and not self.computational.busy
             and self.experiment.controller.worker is None
             and self.instruments.session_state
@@ -509,6 +526,12 @@ class VirtualLabApplication(QMainWindow):
             recommended.style().polish(recommended)
 
     def closeEvent(self,event):
+        center = self.navigation.settings
+        if getattr(center, 'task', None) is not None and center.task.isRunning():
+            self.settings_service.cancel()
+            center.status.setText('Cancelling connection test; close again after worker exit.')
+            event.ignore()
+            return
         if self.intent_panel.busy:
             self.intent_panel.cancel()
             event.ignore()

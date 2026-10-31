@@ -223,7 +223,15 @@ class MSDatasetService:
         self._event('MS_DATASET_REVIEWED', {'run_id': run_id, 'reviewer': reviewer,
             'approved': approved, 'note': note, 'epistemic_state': 'UNKNOWN'}, actor=reviewer)
 
+    def require_export(self, run_id):
+        from virtual_lab.settings import SettingsRepository
+        record = self._record(run_id)
+        exp = self.store.get_experiment(record['experiment_id'])
+        SettingsRepository(Path(self.ledger.db_path).parent).require('exports',
+            exp['project_id'], record['experiment_id'])
+
     def export_report(self, run_id, destination):
+        self.require_export(run_id)
         from virtual_lab.pilots.reporting import build_report, export_snapshot
         self.verify(run_id)
         pin = self._record(run_id)['manifest_sha256']

@@ -29,11 +29,16 @@ def test_ai_is_enabled_explicitly_and_shuts_down(qapp):
     runtime = create_virtual_lab_runtime()
     assert runtime.agent_runtime is None
     assert not runtime.gateway.server.isListening()
+    with pytest.raises(PermissionError):
+        runtime.enable_ai()
+    settings = runtime.settings.repository.load().model_dump()
+    settings['assistant_enabled'] = True
+    runtime.settings.save(settings)
     service = runtime.enable_ai()
-    assert service._runner is None
+    assert service.managed and not runtime.settings.busy
     assert runtime.enable_ai() is service
     runtime.shutdown()
-    assert not service.thread.is_alive()
+    assert not runtime.settings.busy and runtime.settings._process is None
     runtime.shutdown()
     with pytest.raises(RuntimeError, match='closed'): runtime.enable_ai()
 

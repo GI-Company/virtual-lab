@@ -60,41 +60,17 @@ class ExperimentController(QObject):
         if self.worker and self.worker.stop.is_set():
             self._cancelled();return
         self.worker=None
-        try:
-            result = dict(result, experiment_id=self.experiment_at_start.id if self.experiment_at_start else "")
-            artifact_path = self.store.save(result)
-            from virtual_lab.computational.artifacts import digest
-            from pathlib import Path
-            result = dict(result, artifact_path=artifact_path, artifact_sha256=digest(Path(artifact_path)))
-        except Exception as exc:
-            self.runFailed.emit(f"Computed but could not save result: {exc}");return
-            
-        from virtual_lab.gui.services.simulation_result import SimulationResult
-        sim_result = SimulationResult.from_dict(result)
-        
-        from virtual_lab.domain.assemblers import simulation_result_to_observation
+        from virtual_lab.application.simulation_persistence import save_simulation
         from virtual_lab.domain.experiment_store import ExperimentStore
-        
-        active_exp = self.experiment_at_start
-        exp_id_for_obs = active_exp.id if active_exp else ""
-        obs = simulation_result_to_observation(result, exp_id_for_obs)
-        
         db = ExperimentStore()
         try:
-            if active_exp:
-                db.save_observation(obs)
-                active_exp.attach_observation(obs)
-                self.workspace.observationCommitted.emit(obs)
-            else:
-                db.stage_observation(obs)
-                self.workspace.observationStaged.emit(obs)
+            sim_result, _ = save_simulation(result, self.experiment_at_start,
+                self.workspace, db, run_store=self.store)
         except Exception as exc:
-            self.runFailed.emit(f"Result saved but experiment registration failed: {exc}")
+            self.runFailed.emit(f"Result could not be fully saved/registered: {exc}")
             return
         finally:
             db.close()
-        if self.workspace.active_experiment is active_exp:
-            self.workspace.current_result=sim_result
         self.runFinished.emit(sim_result)
     @Slot(str)
     def _failed(self,message):

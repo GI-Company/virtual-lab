@@ -20,14 +20,16 @@ class VirtualLabRuntime:
     policy_engine: Any = None
     context_assembler: Any = None
     gemma_backend: Any = None
+    settings: Any = None
     _closed: bool = False
 
     def enable_ai(self):
         if self._closed:
             raise RuntimeError("The research workspace is closed.")
+        self.settings.repository.require('assistant', *self.settings.context())
         if self.agent_runtime is not None:
             return self.agent_runtime
-        from virtual_lab.ai.runtime_service import AgentRuntimeService
+        from virtual_lab.settings.runtime import ManagedAssistantRuntime as AgentRuntimeService
         from virtual_lab.ai.agent.tool_registry import ToolRegistry
         from virtual_lab.ai.agent.policy import PolicyEngine
         from virtual_lab.ai.agent.context import ScientificContextAssembler
@@ -36,10 +38,10 @@ class VirtualLabRuntime:
 
         registry = ToolRegistry()
         recorder = AgentGenesisRecorder(self.ledger)
-        policy = PolicyEngine(registry, recorder)
+        policy = PolicyEngine(registry, recorder, settings=self.settings)
         assembler = ScientificContextAssembler(registry.get_all_schemas())
         controller = AgentController(registry, policy, assembler, recorder, model_backend=None)
-        runtime = AgentRuntimeService()
+        runtime = AgentRuntimeService(self.settings)
         self.tool_registry, self.policy_engine = registry, policy
         self.context_assembler, self.agent_controller = assembler, controller
         self.agent_runtime = runtime
@@ -48,6 +50,8 @@ class VirtualLabRuntime:
     def shutdown(self):
         if self._closed:
             return
+        if self.settings is not None:
+            self.settings.cancel()
         self.gateway.stop()
         if self.agent_runtime is not None:
             self.agent_runtime.shutdown()
@@ -60,7 +64,9 @@ def create_virtual_lab_runtime(ledger_path=None):
     ledger = GenesisLedger(str(path))
     try:
         # The hardware listener is started only when the Instruments tab is opened.
-        return VirtualLabRuntime(ledger, EvidenceStore(), InstrumentGateway(ledger=ledger, port=8765))
+        from virtual_lab.settings import SettingsService, SettingsRepository
+        return VirtualLabRuntime(ledger, EvidenceStore(), InstrumentGateway(ledger=ledger, port=8765),
+                                 settings=SettingsService(SettingsRepository(path.parent)))
     except BaseException:
         ledger.conn.close()
         raise
