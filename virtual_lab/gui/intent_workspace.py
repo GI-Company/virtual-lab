@@ -167,6 +167,7 @@ class IntentWorkspace(QWidget):
         self.status.setTextFormat(Qt.PlainText)
         layout.addWidget(self.status)
         workspace.activeExperimentChanged.connect(self.refresh)
+        workspace.activeProjectChanged.connect(self.refresh)
         workspace.observationCommitted.connect(self.refresh_model)
         workspace.aiStateChanged.connect(self.refresh_assistant)
         self.refresh()
@@ -183,7 +184,7 @@ class IntentWorkspace(QWidget):
 
     def project_id(self):
         exp = self.workspace.active_experiment
-        return getattr(exp, "project_id", None) if exp else None
+        return getattr(exp, "project_id", None) if exp else self.workspace.active_project_id
 
     def model_id(self):
         value = self.models.currentData()

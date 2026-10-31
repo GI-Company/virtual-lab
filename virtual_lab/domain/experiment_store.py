@@ -174,6 +174,33 @@ class ExperimentStore:
                 key TEXT PRIMARY KEY, value TEXT NOT NULL
             );
         """)
+        project_cols = {r[1] for r in c.execute("PRAGMA table_info(projects)")}
+        if "domain_id" not in project_cols:
+            # Additive migration: no project/experiment IDs or artifacts are rewritten.
+            # Retain a private recovery snapshot when upgrading an occupied store.
+            if self._db_path != ':memory:' and c.execute('SELECT 1 FROM projects LIMIT 1').fetchone():
+                import tempfile
+                fd, backup_path = tempfile.mkstemp(prefix='experiments-pre-domain-v1-', suffix='.sqlite3',
+                                                  dir=Path(self._db_path).parent)
+                os.close(fd)
+                with sqlite3.connect(backup_path) as backup:
+                    c.backup(backup)
+            c.execute("ALTER TABLE projects ADD COLUMN domain_id TEXT NOT NULL DEFAULT 'general'")
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS project_context (
+                project_id TEXT PRIMARY KEY,
+                last_experiment_id TEXT NOT NULL DEFAULT '',
+                last_tool_id TEXT NOT NULL DEFAULT 'projects',
+                last_opened_utc TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS experiment_context (
+                experiment_id TEXT PRIMARY KEY,
+                selected_observation_id TEXT NOT NULL DEFAULT '',
+                selected_ms_run_id TEXT NOT NULL DEFAULT '',
+                ms_tab_id TEXT NOT NULL DEFAULT 'import',
+                notebook_tab_id TEXT NOT NULL DEFAULT 'details'
+            );
+        """)
         if "quality_state" not in obs_cols:
             c.execute("ALTER TABLE observations ADD COLUMN quality_state TEXT NOT NULL DEFAULT 'UNKNOWN'")
         if "parent_observation_id" not in obs_cols:

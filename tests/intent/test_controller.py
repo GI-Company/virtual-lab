@@ -40,7 +40,7 @@ def context(tmp_path, monkeypatch):
     lease = WorkspaceLease(tmp_path)
     ledger = GenesisLedger(str(tmp_path / "genesis.db"))
     store = ExperimentStore(str(tmp_path / "experiments.db"))
-    store._conn.execute("INSERT INTO projects VALUES ('p','test project','now')")
+    store._conn.execute("INSERT INTO projects (id,name,created_at) VALUES ('p','test project','now')")
     store._conn.commit()
     key = SigningKey.generate()
     pk = key.verify_key.encode().hex()
@@ -206,7 +206,7 @@ def test_prior_observation_and_cross_project_prediction_rejected(context):
     c, m, _, _ = context
     with pytest.raises(IntentError, match="already has scientific"):
         c.predict(m, pred["payload"]["experiment_id"], {"condition": 0.0}, "new")
-    c.store._conn.execute("INSERT INTO projects VALUES ('other','Other','now')")
+    c.store._conn.execute("INSERT INTO projects (id,name,created_at) VALUES ('other','Other','now')")
     c.store._conn.commit()
     c.store.save_experiment("other-exp", "", "", "", project_id="other")
     with pytest.raises(IntentError, match="project"):

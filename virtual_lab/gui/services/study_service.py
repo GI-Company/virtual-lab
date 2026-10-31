@@ -18,6 +18,7 @@ from virtual_lab.core.experiment import VirtualExperiment
 from virtual_lab.core.ledger import Actor
 from virtual_lab.computational.artifacts import CompletedRun, data_root, digest
 from virtual_lab.domain.experiment_store import ExperimentStore
+from virtual_lab.domain.research_domains import domain_by_id, TOOLS
 
 
 class StudyService:
@@ -28,19 +29,150 @@ class StudyService:
     def _event(self, kind, payload):
         self.ledger.append(str(uuid.uuid4()), Actor(type="USER", id="local-researcher"), kind, payload)
 
-    def projects(self):
-        return [dict(r) for r in self.store._conn.execute("SELECT * FROM projects ORDER BY created_at, id")]
+    def projects(self, domain_id=None, search="", *, recent=False):
+        if domain_id is not None:
+            domain_by_id(domain_id)
+        rows = self.store._conn.execute(
+            """SELECT p.* FROM projects p
+            LEFT JOIN project_context c ON c.project_id=p.id
+            ORDER BY c.last_opened_utc DESC, p.created_at DESC, p.id"""
+            if recent
+            else "SELECT * FROM projects ORDER BY created_at,id"
+        )
+        return [
+            dict(r)
+            for r in rows
+            if (domain_id is None or r["domain_id"] == domain_id)
+            and search.casefold().strip() in r["name"].casefold()
+        ]
 
-    def create_project(self, name):
+    def create_project(self, name, domain_id="general"):
+        domain_by_id(domain_id)
         name = name.strip()
         if not name or len(name) > 200:
             raise ValueError("Enter a project name of at most 200 characters.")
         project_id = str(uuid.uuid4())
         with self.store._conn:
-            self.store._conn.execute("INSERT INTO projects VALUES (?, ?, ?)",
-                                     (project_id, name, datetime.now(timezone.utc).isoformat()))
-        self._event("PROJECT_CREATED", {"project_id": project_id, "name": name})
+            self.store._conn.execute(
+                "INSERT INTO projects (id,name,created_at,domain_id) VALUES (?, ?, ?, ?)",
+                (project_id, name, datetime.now(timezone.utc).isoformat(), domain_id),
+            )
+        self._event(
+            "PROJECT_CREATED",
+            {"project_id": project_id, "name": name, "domain_id": domain_id},
+        )
         return project_id
+
+    def project_context(self, project_id):
+        row = self.store._conn.execute(
+            "SELECT * FROM project_context WHERE project_id=?", (project_id,)
+        ).fetchone()
+        return dict(row) if row else {}
+
+    def set_project_domain(self, project_id, domain_id):
+        domain_by_id(domain_id)
+        project = next((p for p in self.projects() if p["id"] == project_id), None)
+        if project is None:
+            raise ValueError("Select an existing project")
+        if project["domain_id"] == domain_id:
+            return
+        with self.store._conn:
+            self.store._conn.execute(
+                "UPDATE projects SET domain_id=? WHERE id=?", (domain_id, project_id)
+            )
+            self._event(
+                "PROJECT_DOMAIN_CHANGED",
+                {
+                    "project_id": project_id,
+                    "previous_domain_id": project["domain_id"],
+                    "domain_id": domain_id,
+                },
+            )
+
+    def open_project(self, project_id):
+        project = next((p for p in self.projects() if p["id"] == project_id), None)
+        if project is None:
+            raise ValueError("Select an existing project")
+        last = self.project_context(project_id).get("last_experiment_id")
+        row = self.store.get_experiment(last) if last else None
+        if not row or row["project_id"] != project_id:
+            row = next(
+                (r for r in self.store.list_experiments() if r["project_id"] == project_id),
+                None,
+            )
+        self.activate(row["id"] if row else None, project_id=project_id)
+
+    def save_project_tool(self, project_id, tool_id):
+        if tool_id not in TOOLS or TOOLS[tool_id].status.value == "unavailable":
+            raise ValueError("Unknown or unavailable workstation tool")
+        if not any(p["id"] == project_id for p in self.projects()):
+            raise ValueError("Select an existing project")
+        with self.store._conn:
+            self.store._conn.execute(
+                "INSERT INTO project_context (project_id,last_tool_id) VALUES (?,?) ON CONFLICT(project_id) DO UPDATE SET last_tool_id=excluded.last_tool_id",
+                (project_id, tool_id),
+            )
+
+    def experiment_view(self, experiment_id):
+        row = self.store._conn.execute(
+            "SELECT * FROM experiment_context WHERE experiment_id=?", (experiment_id,)
+        ).fetchone()
+        result = dict(row) if row else {}
+        if result.get("ms_tab_id") not in ("import", "spectrum", "files", "review"):
+            result["ms_tab_id"] = "import"
+        if result.get("notebook_tab_id") not in ("details", "plan", "conclusion"):
+            result["notebook_tab_id"] = "details"
+        return result
+
+    def save_experiment_view(self, experiment_id, **values):
+        allowed = {
+            "selected_observation_id",
+            "selected_ms_run_id",
+            "ms_tab_id",
+            "notebook_tab_id",
+        }
+        if (
+            not values
+            or set(values) - allowed
+            or not self.store.get_experiment(experiment_id)
+        ):
+            raise ValueError("Invalid experiment view")
+        if any(not isinstance(v, str) or len(v) > 200 for v in values.values()):
+            raise ValueError("Invalid view value")
+        observations = self.store.get_observations_for_experiment(experiment_id)
+        if values.get("selected_observation_id") and not any(
+            o.observation_id == values["selected_observation_id"] for o in observations
+        ):
+            raise ValueError("Selected result does not belong to this experiment")
+        if values.get("selected_ms_run_id") and not any(
+            o.session_id == values["selected_ms_run_id"] and o.kind.value == "MS_CENTROID"
+            for o in observations
+        ):
+            raise ValueError("Selected MS dataset does not belong to this experiment")
+        if "ms_tab_id" in values and values["ms_tab_id"] not in (
+            "import",
+            "spectrum",
+            "files",
+            "review",
+        ):
+            raise ValueError("Invalid MS view")
+        if "notebook_tab_id" in values and values["notebook_tab_id"] not in (
+            "details",
+            "plan",
+            "conclusion",
+        ):
+            raise ValueError("Invalid notebook view")
+        with self.store._conn:
+            self.store._conn.execute(
+                "INSERT OR IGNORE INTO experiment_context (experiment_id) VALUES (?)",
+                (experiment_id,),
+            )
+            self.store._conn.execute(
+                "UPDATE experiment_context SET "
+                + ",".join(k + "=?" for k in values)
+                + " WHERE experiment_id=?",
+                (*values.values(), experiment_id),
+            )
 
     def create_experiment(self, project_id, label, question):
         label, question = label.strip(), question.strip()
@@ -56,24 +188,70 @@ class StudyService:
         self.activate(exp.id)
         return exp.id
 
-    def activate(self, experiment_id):
+    def activate(self, experiment_id, *, project_id=None):
         row = self.store.get_experiment(experiment_id) if experiment_id else None
         if experiment_id and row is None:
             raise ValueError("Experiment no longer exists.")
         exp = None
         if row:
-            exp = VirtualExperiment(row['disease_id'], row['compound_id'], row['evidence_snapshot'],
-                                    parent_id=row['parent_id'], label=row['label'])
-            exp.id, exp.status = row['id'], row['status']
-            exp.project_id, exp.research_question = row['project_id'], row['research_question']
+            exp = VirtualExperiment(
+                row["disease_id"],
+                row["compound_id"],
+                row["evidence_snapshot"],
+                parent_id=row["parent_id"],
+                label=row["label"],
+            )
+            exp.id, exp.status = row["id"], row["status"]
+            exp.project_id, exp.research_question = (
+                row["project_id"],
+                row["research_question"],
+            )
             exp.observations = self.store.get_observations_for_experiment(exp.id)
+        project_id = row["project_id"] if row else project_id
+        if project_id and not any(p["id"] == project_id for p in self.projects()):
+            raise ValueError("Project no longer exists")
+        previous_project = self.workspace._active_project_id
         with self.store._conn:
-            self.store._conn.execute("INSERT OR REPLACE INTO workspace_settings VALUES ('active_experiment', ?)",
-                                     (experiment_id or "",))
-        self.workspace._active_project_id = row['project_id'] if row else None
+            self.store._conn.execute(
+                "INSERT OR REPLACE INTO workspace_settings VALUES ('active_experiment', ?)",
+                (experiment_id or "",),
+            )
+            self.store._conn.execute(
+                "INSERT OR REPLACE INTO workspace_settings VALUES ('active_project', ?)",
+                (project_id or "",),
+            )
+            if project_id:
+                self.store._conn.execute(
+                    """INSERT INTO project_context (project_id,last_experiment_id,last_opened_utc,last_tool_id) VALUES (?,?,?,?)
+                    ON CONFLICT(project_id) DO UPDATE SET last_experiment_id=excluded.last_experiment_id,last_opened_utc=excluded.last_opened_utc""",
+                    (
+                        project_id,
+                        experiment_id or "",
+                        datetime.now(timezone.utc).isoformat(),
+                        domain_by_id(
+                            next(
+                                p["domain_id"]
+                                for p in self.projects()
+                                if p["id"] == project_id
+                            )
+                        ).default_tool,
+                    ),
+                )
+        self.workspace._active_project_id = project_id
         # Clear the previous experiment's analysis before announcing the new context.
         self.workspace.current_result = None
+        self.workspace.calibrationResultChanged.emit(None)
+        self.workspace.biologicalResultChanged.emit(None)
+        self.workspace.validationResultChanged.emit(None)
+        from virtual_lab.gui.services.selection import ScientificSelection, SelectionKind
+
+        self.workspace.selected_object = ScientificSelection(kind=SelectionKind.NONE)
+        self.workspace._selected_compound = None
+        self.workspace._selected_evidence = None
+        self.workspace.evidenceSelectionChanged.emit(None)
         self.workspace.active_experiment = exp
+        if previous_project != project_id:
+            self.workspace.activeProjectChanged.emit(project_id or "")
 
     def update_question(self, question):
         exp = self.workspace.active_experiment
@@ -85,9 +263,17 @@ class StudyService:
         self.activate(exp.id)
 
     def restore(self):
-        row = self.store._conn.execute("SELECT value FROM workspace_settings WHERE key='active_experiment'").fetchone()
+        row = self.store._conn.execute(
+            "SELECT value FROM workspace_settings WHERE key='active_experiment'"
+        ).fetchone()
         if row and self.store.get_experiment(row[0]):
             self.activate(row[0])
+        else:
+            project = self.store._conn.execute(
+                "SELECT value FROM workspace_settings WHERE key='active_project'"
+            ).fetchone()
+            if project and any(p["id"] == project[0] for p in self.projects()):
+                self.open_project(project[0])
 
     def research_records(self, experiment_id=None):
         experiment_id = experiment_id or getattr(self.workspace.active_experiment, 'id', '')
@@ -481,10 +667,14 @@ class StudyService:
                 if hashlib.sha256(raw).hexdigest() != snapshot['files'][name]:
                     raise ValueError("Package artifact hash mismatch.")
         exp, project, rows = snapshot['experiment'], snapshot['project'], snapshot['observations']
+        # Version-1 packages without a discipline remain valid legacy studies.
+        supplied_domain = project.get('domain_id')
+        domain_by_id(supplied_domain or 'general')
         if exp['project_id'] != project['id'] or self.store.get_experiment(exp['id']):
             raise ValueError("Experiment already exists or project reference is invalid. Import into a separate workspace.")
         existing_project = next((p for p in self.projects() if p['id'] == project['id']), None)
-        if existing_project and existing_project != project:
+        if existing_project and (any(existing_project[k]!=project[k] for k in ('id','name','created_at'))
+                or supplied_domain is not None and existing_project['domain_id']!=supplied_domain):
             raise ValueError("Project identity conflicts with the local project.")
         seen = set()
         for row in rows:
@@ -518,8 +708,8 @@ class StudyService:
                     raise ValueError('Biological package is missing its exact parent state.')
             with self.store._conn:
                 if not existing_project:
-                    self.store._conn.execute('INSERT INTO projects (id,name,created_at) VALUES (?,?,?)',
-                                             tuple(project[k] for k in ('id','name','created_at')))
+                    self.store._conn.execute('INSERT INTO projects (id,name,created_at,domain_id) VALUES (?,?,?,?)',
+                                             (*tuple(project[k] for k in ('id','name','created_at')),supplied_domain or 'general'))
                 for table, records in (('experiments', [exp]), ('observations', rows)):
                     columns = [r[1] for r in self.store._conn.execute(f'PRAGMA table_info({table})')]
                     for record in records:

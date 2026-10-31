@@ -32,15 +32,15 @@ Scope decision: implement in reviewable milestones. Complete BSA verification/im
 - [x] Add an experimental local INTENT panel with real status, checkpoint history and explicit limitations.
 - [x] Keep training outside the Qt process and preserve working research when AI/learning are disabled.
 
-## Milestone 3: Discipline navigation and project persistence (next)
+## Milestone 3: Discipline navigation and project persistence (completed locally)
 
-- [ ] Shared domain registry with enabled, experimental and unavailable tools.
-- [ ] Home -> discipline project library -> dedicated workstation using the existing study/evidence services.
-- [ ] Safe project domain migration preserving project IDs, experiment links and evidence.
-- [ ] Search, recent projects, breadcrumbs and restored active experiment/dataset/tool state.
-- [ ] Dedicated MS workstation first; expose other installed capabilities without fabricated availability.
-- [ ] Test project switching, reopen/restart and absence of cross-project observations.
-- [ ] Keep Research and Academia presentation profiles on common core packages.
+- [x] Shared domain registry with enabled, experimental and unavailable tools.
+- [x] Home -> discipline project library -> dedicated workstation using the existing study/evidence services.
+- [x] Safe project domain migration preserving project IDs, experiment links and evidence.
+- [x] Search, recent projects, breadcrumbs and restored active experiment/dataset/tool state.
+- [x] Dedicated MS workstation first; expose other installed capabilities without fabricated availability.
+- [x] Test project switching, reopen/restart and absence of cross-project observations.
+- [x] Keep Research and Academia presentation profiles on common core packages.
 
 ## Milestone 4: Central settings and inference providers (next)
 
@@ -73,7 +73,7 @@ Scope decision: implement in reviewable milestones. Complete BSA verification/im
 
 ## Local validation and remaining release gates
 
-See [controller and evidence notes](../intent-experiment-controller.md) for signed-review contracts, the institutional trust-anchor prerequisite, software-only test scope and reproducible commands. The supplied BSA data never become verified training outcomes. Source datasets, trained checkpoint files, recordings and evidence packets stay outside Git. Full navigation, central settings, institutional reviewer enrollment and distributed collaboration are not implemented by milestones 1 and 2. The existing MS release manifest describes the earlier MS release; this branch is a separate experimental source milestone, not a new certified release.
+See [controller and evidence notes](../intent-experiment-controller.md) for signed-review contracts, the institutional trust-anchor prerequisite, software-only test scope and reproducible commands. The supplied BSA data never become verified training outcomes. Source datasets, trained checkpoint files, recordings and evidence packets stay outside Git. Milestone 3 adds [local discipline navigation and project persistence](../research-discipline-navigation.md). Central settings, institutional reviewer enrollment and distributed collaboration remain outstanding. The existing MS release manifest describes the earlier MS release; this branch is a separate experimental source milestone, not a new certified release.
 
 ## Completion rules
 

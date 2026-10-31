@@ -82,9 +82,10 @@ class StudyPathEdit(QLineEdit):
 
 class ProjectsWorkspace(QWidget):
     navigateRequested = Signal(str)
-    def __init__(self, workspace, ledger, parent=None, store=None):
+    def __init__(self, workspace, ledger, parent=None, store=None, *, restore=True):
         super().__init__(parent)
         self.workspace = workspace
+        self._restoring_view = True
         self.service = StudyService(workspace, ledger, store)
         outer = QVBoxLayout(self)
         content = QWidget()
@@ -95,17 +96,21 @@ class ProjectsWorkspace(QWidget):
         self.content_scroll.setWidget(content)
         outer.addWidget(self.content_scroll)
         title = QLabel('Projects and experiments')
+        self.title=title
         layout.addWidget(title)
         self.workflow_status = QLabel()
         self.workflow_status.setWordWrap(True)
         layout.addWidget(self.workflow_status)
         navigation = QHBoxLayout()
+        self.navigation_buttons={}
         for name in ('Simulation', 'Analysis', 'Compare'):
             button = QPushButton('Open ' + name)
+            self.navigation_buttons[name]=button
             button.clicked.connect(lambda checked=False, target=name: self.navigateRequested.emit(target))
             navigation.addWidget(button)
         layout.addLayout(navigation)
         form = QFormLayout()
+        self.setup_form = form
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self.project_name = QLineEdit()
         self.project_name.setPlaceholderText('e.g. Hemoglobin reference research')
@@ -186,11 +191,31 @@ class ProjectsWorkspace(QWidget):
         workspace.observationStaged.connect(self.refresh_results)
         workspace.aiStateChanged.connect(lambda _: self._refresh_notebook())
         self.refresh_projects()
-        self.service.restore()
+        if restore:
+            self.service.restore()
         if workspace.active_experiment:
             self.refresh_projects(workspace.active_experiment.project_id)
             self.experiments.setCurrentIndex(self.experiments.findData(workspace.active_experiment.id))
         self.refresh_results()
+
+    def set_project_context(self, project_id):
+        """Project selection belongs to the discipline library in the new shell."""
+        self.refresh_projects(project_id)
+        self.title.setText("Experiment notebook")
+        self.setup_form.setRowVisible(0, False)
+        self.setup_form.setRowVisible(1, False)
+
+    def set_available_tools(self, tool_ids):
+        for name,tool_id in {'Simulation':'simulation','Analysis':'analysis','Compare':'compare'}.items():
+            self.navigation_buttons[name].setEnabled(tool_id in tool_ids)
+            self.navigation_buttons[name].setToolTip('' if tool_id in tool_ids else 'Unavailable in this installation')
+
+    def _save_notebook_view(self, index):
+        exp = self.workspace.active_experiment
+        if exp and not self._restoring_view:
+            self.service.save_experiment_view(
+                exp.id, notebook_tab_id=("details", "plan", "conclusion")[index]
+            )
 
     def _build_notebook(self):
         self.notebook = QTabWidget()
@@ -205,7 +230,7 @@ class ProjectsWorkspace(QWidget):
             self.plan_fields[key] = field; form.addRow(label, field)
         self.save_plan_button = QPushButton('Save research plan')
         self.save_plan_button.clicked.connect(lambda: self._action(self._save_plan,
-            'Research plan saved as a new immutable record. Configure and run the experiment in Simulation.'))
+            'Research plan saved. Continue with your experiment.'))
         form.addRow(self.save_plan_button)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(form_widget)
         self.notebook.addTab(scroll, 'Research plan')
@@ -227,6 +252,7 @@ class ProjectsWorkspace(QWidget):
         form.addRow(self.save_conclusion_button)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(conclusion)
         self.notebook.addTab(scroll, 'Conclusion')
+        self.notebook.currentChanged.connect(self._save_notebook_view)
         self._notebook_experiment = None
 
     def _refresh_notebook(self):
@@ -345,6 +371,7 @@ class ProjectsWorkspace(QWidget):
         self.experiment_name.clear(); self.question.clear()
 
     def refresh_results(self, *_):
+        self._restoring_view = True
         self.results.clear(); self.staging.clear(); self.details.clear()
         exp = self.workspace.active_experiment
         if exp:
@@ -356,6 +383,14 @@ class ProjectsWorkspace(QWidget):
         else:
             self.active.setText('No active experiment. New results enter staging.')
         self._refresh_notebook()
+        if exp:
+            view=self.service.experiment_view(exp.id)
+            self.notebook.setCurrentIndex(('details','plan','conclusion').index(view.get('notebook_tab_id','details')))
+            for index in range(self.results.count()):
+                if self.results.item(index).data(Qt.UserRole).observation_id==view.get('selected_observation_id'):
+                    self.results.setCurrentRow(index)
+                    break
+        self._restoring_view = False
         for row in self.service.store.list_staged():
             item = QListWidgetItem(f"{row['instrument_id']} · {row['epistemic_state']} · {row['session_id'][:8]}")
             item.setData(Qt.UserRole, row['observation_id']); self.staging.addItem(item)
@@ -369,7 +404,13 @@ class ProjectsWorkspace(QWidget):
         if item is None: return
         try:
             obs = item.data(Qt.UserRole)
+            exp=self.workspace.active_experiment
+            if exp is None or obs.experiment_id!=exp.id:
+                raise ValueError('Select a result in the active experiment')
             result = self.service.inspect(obs)
+            exp=self.workspace.active_experiment
+            if exp and obs.experiment_id==exp.id and not self._restoring_view:
+                self.service.save_experiment_view(exp.id,selected_observation_id=obs.observation_id)
             self.details.setPlainText('Artifact hashes verified. This is not biological validation.\n\n' + json.dumps(result, indent=2))
             if obs.instrument_id in ('research_plan', 'research_conclusion'):
                 return
