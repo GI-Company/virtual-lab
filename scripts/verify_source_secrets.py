@@ -1,7 +1,8 @@
 """Offline source secret gate. Print finding locations, never candidate values."""
 import hashlib
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PureWindowsPath
 import re
 import subprocess
 import sys
@@ -9,6 +10,15 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT/'integrations/shared-engine-contract/source-secret-review.json'
 PATHS = ['virtual_lab','tests','scripts','docs','integrations','.github','README.md','pyproject.toml','.gitignore']
+
+
+def source_path(filename, *, windows=os.name == 'nt'):
+    return PureWindowsPath(filename).as_posix() if windows else filename
+
+
+def source_exclusion(*, windows=os.name == 'nt'):
+    pattern = r'(__pycache__/|\.pyc$|\.db$|^virtual_lab/gui/assets/molstar\.js$|^integrations/shared-engine-contract/source-secret-review\.json$)'
+    return pattern.replace('/', r'[/\\]') if windows else pattern
 
 
 def main():
@@ -32,7 +42,7 @@ def main():
     # ignored when its bytes change. Generated binary caches are not source.
     # The review file contains only finding digests and constrained descriptions;
     # scanning those digests recursively would create an endless baseline.
-    exclude = r'(__pycache__/|\.pyc$|\.db$|^virtual_lab/gui/assets/molstar\.js$|^integrations/shared-engine-contract/source-secret-review\.json$)'
+    exclude = source_exclusion()
     process = subprocess.run([sys.executable,'-m','detect_secrets','scan','--no-verify','--all-files',
         '--exclude-files',exclude,*PATHS],cwd=ROOT,capture_output=True,text=True,check=True)
     results = json.loads(process.stdout)['results']
@@ -40,6 +50,7 @@ def main():
     unexpected = []
     count = 0
     for filename, findings in results.items():
+        filename = source_path(filename)
         for finding in findings:
             count += 1
             if (filename,finding['type'],finding['hashed_secret']) not in allowed:

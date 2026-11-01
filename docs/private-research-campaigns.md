@@ -179,6 +179,14 @@ account acceptance test. CI is configured to repeat headless service checks on
 Linux, macOS and Windows. Local macOS results do not establish that those CI runs
 have passed or that native installers are qualified.
 
+Linux desktop CI installs the Qt EGL/OpenGL runtime libraries, selects Java 21
+for the existing Kotlin interoperability fixture, and explicitly uses Chromium's
+[SwiftShader driver for GPU-less test hosts](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md).
+The rendering flags are confined to CI; application launch defaults are unchanged.
+Git attributes preserve LF source bytes across platforms, and the source-secret
+gate maps Windows path separators to the same exact reviewed entries without
+expanding its allowlist.
+
 ## Remaining product task list
 
 - [x] Custom bounded plans use the existing engine and persisted evidence.
