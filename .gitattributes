@@ -1,0 +1,2 @@
+# Schemas, source pins and fixtures must have identical bytes on every platform.
+* text=auto eol=lf

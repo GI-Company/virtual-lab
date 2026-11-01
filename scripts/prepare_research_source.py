@@ -10,7 +10,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORIES = {'virtual_lab','tests','scripts','docs','integrations','protocol','examples','.github'}
 ROOT_FILES = {'README.md','pyproject.toml','uv.lock','release_manifest.json','requirements-cockpit.txt',
-              'start_virtuallab.sh','.gitignore','LICENSE','LICENSE.md','LICENSE.txt'}
+              'start_virtuallab.sh','.gitignore','.gitattributes','LICENSE','LICENSE.md','LICENSE.txt'}
 
 
 def git(*args):
