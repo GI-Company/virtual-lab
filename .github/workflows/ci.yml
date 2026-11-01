@@ -85,8 +85,12 @@ jobs:
           path: dependency-audit.json
 
   research-service:
-    name: Authenticated read-only research service
-    runs-on: ubuntu-latest
+    name: Authenticated research service (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -108,15 +112,21 @@ jobs:
         run: uv run --no-sync python -m pytest tests/application tests/integrations tests/research_service --junitxml=output/service-tests.xml -q
       - name: Qualify independent HTTP clients against synthetic data
         run: uv run --no-sync python -m scripts.verify_research_service --output output/service-http
+      - name: Qualify custom background research and revocation over HTTP
+        run: uv run --no-sync python -m scripts.verify_campaign_service --output output/campaign-http
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: research-service-synthetic-evidence
+          name: research-service-synthetic-evidence-${{ matrix.os }}
           path: |
             output/service-tests.xml
             output/service-http/validation.json
             output/service-http/verified-report.json
             output/service-http/fixture/service-audit.jsonl
+            output/campaign-http/validation.json
+            output/campaign-http/campaign-results.json
+            output/campaign-http/campaign-results.json.sha256
+            output/campaign-http/fixture/service-audit.jsonl
 
   build:
     name: Reproducible pilot wheel and manifest

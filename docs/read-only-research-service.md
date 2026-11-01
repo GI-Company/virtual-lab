@@ -1,5 +1,10 @@
 # Read-only research service qualification
 
+This document describes the default read-only mode. An explicitly enabled
+[private campaign service](private-research-campaigns.md) now adds bounded custom
+numerical execution, separate default-off grants and synthetic qualification.
+Without `--enable-campaigns`, the routes and mutation rejection below still apply.
+
 This milestone adds a private HTTP adapter to the existing Python `ResearchEngine`. It has been qualified locally against a new synthetic instance. It has **not** been deployed, connected to GIC accounts, installed in ChatGPT, or paired with the desktop UI. Three independent HTTP clients in the qualification stand in for those future interfaces. They do not establish integration with the actual products.
 
 Design reference: [GIC integration blueprint at the reviewed PR head](https://github.com/GI-Company/GiC/blob/a65e68287b6077d1aa20eae0cbcdb47c7960d427/docs/virtual-lab-shared-engine-integration.md), subsequently merged in PR #15. No website files, paid-account policy, Stripe configuration, public demonstration, or production database were changed by this Python service milestone.

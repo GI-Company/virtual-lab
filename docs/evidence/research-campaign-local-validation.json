@@ -1,0 +1,37 @@
+{
+  "format": "virtuallab-research-campaign-local-validation-v1",
+  "validated_at_utc": "2026-11-01T02:04:08.623730+00:00",
+  "tests": {
+    "tests": 74,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "new_campaign_test_cases": 13,
+  "execution": "Actual CPU simulation workers using custom concentrations; engine shutdown/reopen between completed steps; no GUI or cloud required",
+  "checked": [
+    "saved plan acknowledgement",
+    "custom inputs",
+    "persistent progress",
+    "result classification SIMULATED",
+    "comparison of distinct conditions",
+    "scoped experiment access",
+    "stable job request IDs across a lost checkpoint",
+    "no silent retry after interrupted work",
+    "run and wall-clock bounds",
+    "pause and resume without deadline reset",
+    "active cancellation and capacity release",
+    "modified plan rejection"
+  ],
+  "offline_source_secret_scan": {
+    "passed": true,
+    "reviewed_nonsecret_matches": 24,
+    "provider_verification": false
+  },
+  "hosted_accounts_tested": false,
+  "chatgpt_campaign_tools_connected": false,
+  "scheduler_implemented": false,
+  "public_mcp_changed": false,
+  "financial_budget_enforced": false,
+  "status": "Local controller foundation verified; hosted continuous research not yet implemented"
+}

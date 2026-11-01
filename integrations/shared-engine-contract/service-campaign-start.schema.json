@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "approved_plan_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Approved Plan Sha256",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "title": "Request Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "approved_plan_sha256"
+  ],
+  "title": "StartCampaign",
+  "type": "object"
+}

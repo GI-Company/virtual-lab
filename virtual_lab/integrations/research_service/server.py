@@ -26,8 +26,9 @@ def error(code, status):
 
 
 class Boundary:
-    def __init__(self, app, verifier, reader):
+    def __init__(self, app, verifier, reader, *, enable_campaigns=False):
         self.app, self.verifier, self.reader = app, verifier, reader
+        self.enable_campaigns = enable_campaigns
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
@@ -54,9 +55,13 @@ class Boundary:
             if len(values) != 1 or not values[0].startswith(b'Bearer '):
                 raise Unauthenticated()
             principal = self.verifier.verify(values[0][7:].decode('ascii'))
-            if (scope['method'] != 'GET' or len(scope['path']) > 2048 or
-                len(scope['query_string']) > 2048 or any(k == b'transfer-encoding' or
-                (k == b'content-length' and v != b'0') for k,v in headers)):
+            campaign_write = self.enable_campaigns and scope['method'] == 'POST' and re.fullmatch(
+                r'/v1/instances/[A-Za-z0-9_-]{1,100}/projects/[A-Za-z0-9_-]{1,100}'
+                r'/experiments/[A-Za-z0-9_-]{1,100}/campaigns'
+                r'(?:/[A-Za-z0-9_-]{1,100}/(?:start|pause|cancel))?', scope['path'])
+            if ((scope['method'] != 'GET' and not campaign_write) or len(scope['path']) > 2048 or
+                len(scope['query_string']) > 2048 or (not campaign_write and any(k == b'transfer-encoding' or
+                (k == b'content-length' and v != b'0') for k,v in headers))):
                 await self.reader.reject(principal, request_id, surface)
                 response = error('READ_ONLY_REQUEST_REQUIRED', 405 if scope['method'] != 'GET' else 400)
                 await response(scope, receive, secure_send)
@@ -74,10 +79,15 @@ class Boundary:
             await error('SERVICE_UNAVAILABLE', 503)(scope, receive, secure_send)
 
 
-def create_app(*, root, policy_path, audit_path, verifier, allowed_hosts):
+def create_app(*, root, policy_path, audit_path, verifier, allowed_hosts,
+               enable_campaigns=False, tick_interval=.2):
     if not allowed_hosts or any('*' in host for host in allowed_hosts):
         raise ValueError('Explicit allowed hosts are required; wildcards are not allowed')
-    reader = Reader(root, policy_path, audit_path)
+    if enable_campaigns:
+        from .campaign_host import CampaignReader
+        reader = CampaignReader(root, policy_path, audit_path, tick_interval=tick_interval)
+    else:
+        reader = Reader(root, policy_path, audit_path)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -94,7 +104,7 @@ def create_app(*, root, policy_path, audit_path, verifier, allowed_hosts):
                 raise NotFound()
             scope = dict(params)
             operation = request.scope['route_operation']
-            allowed = {'offset','limit'} if operation in ('experiments.list','observations.list','spectrum.get') else {'sequence','limit'} if operation == 'changes.list' else set()
+            allowed = {'offset','limit'} if operation in ('experiments.list','observations.list','spectrum.get','campaign.list') else {'sequence','limit'} if operation == 'changes.list' else set()
             if set(request.query_params) - allowed or any(len(request.query_params.getlist(k)) != 1 for k in request.query_params):
                 raise ValueError()
             query = {}
@@ -122,6 +132,11 @@ def create_app(*, root, policy_path, audit_path, verifier, allowed_hosts):
         (experiment,'experiment.get'), (experiment+'/observations','observations.list'),
         (observation+'/report','report.get'), (observation+'/spectrum','spectrum.get'),
         (prefix+'/changes','changes.list')]
+    campaign_path = experiment+'/campaigns'
+    if enable_campaigns:
+        specs.extend([(campaign_path, 'campaign.list'),
+                      (campaign_path+'/{campaign_id}', 'campaign.get'),
+                      (campaign_path+'/{campaign_id}/results', 'campaign.results')])
     routes = []
     for path, operation in specs:
         # A distinct endpoint binds the allowlisted operation; never a query field.
@@ -129,6 +144,38 @@ def create_app(*, root, policy_path, audit_path, verifier, allowed_hosts):
             request.scope['route_operation'] = _operation
             return await read(request)
         routes.append(Route(path, endpoint, methods=['GET']))
+
+    if enable_campaigns:
+        from .campaign_host import CampaignConflict
+        from .campaign_requests import InvalidBody, campaign_body
+
+        async def write(request, operation):
+            try:
+                if request.query_params:
+                    raise InvalidBody()
+                scope = dict(request.path_params)
+                if any(not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', value) for value in scope.values()):
+                    raise NotFound()
+                body = await campaign_body(request, operation)
+                raw, digest = await reader.write(request.state.principal, operation, scope, body,
+                    request.state.request_id, request.state.surface)
+                return Response(raw, media_type='application/json', headers={'X-Content-SHA256': digest})
+            except CampaignConflict:
+                return error('CAMPAIGN_CONFLICT', 409)
+            except NotFound:
+                return error('NOT_FOUND', 404)
+            except (InvalidBody, ValueError) as exc:
+                await reader.reject(request.state.principal, request.state.request_id, request.state.surface)
+                return error('INVALID_CAMPAIGN_REQUEST', exc.status if isinstance(exc, InvalidBody) else 400)
+            except Unavailable:
+                return error('SERVICE_UNAVAILABLE', 503)
+
+        for path, operation in [(campaign_path, 'campaign.create'),
+                *[(campaign_path+'/{campaign_id}/'+action, 'campaign.'+action)
+                  for action in ('start', 'pause', 'cancel')]]:
+            async def command(request, _operation=operation):
+                return await write(request, _operation)
+            routes.append(Route(path, command, methods=['POST']))
 
     async def missing(request, exc):
         try:
@@ -142,7 +189,8 @@ def create_app(*, root, policy_path, audit_path, verifier, allowed_hosts):
 
     app = Starlette(routes=routes, lifespan=lifespan,
                     exception_handlers={404:missing, Unavailable:unavailable}, debug=False)
-    return Boundary(TrustedHostMiddleware(app, allowed_hosts=list(allowed_hosts), www_redirect=False), verifier, reader)
+    return Boundary(TrustedHostMiddleware(app, allowed_hosts=list(allowed_hosts), www_redirect=False),
+                    verifier, reader, enable_campaigns=enable_campaigns)
 
 
 def main():
@@ -152,12 +200,15 @@ def main():
     parser.add_argument('--identity', required=True, type=Path, help='JSON: issuer, audience, public_keys (kid to PEM)')
     parser.add_argument('--audit', required=True, type=Path)
     parser.add_argument('--port', type=int, default=8767)
+    parser.add_argument('--enable-campaigns', action='store_true',
+                        help='Opt into bounded numerical campaign writes; explicit grants/settings also required')
     args = parser.parse_args()
     identity = json.loads(read_bounded(args.identity, 65536), object_pairs_hook=reject_duplicates)
     if set(identity) != {'issuer','audience','public_keys'}:
         parser.error('Identity config requires issuer, audience and public_keys only')
     app = create_app(root=args.root, policy_path=args.policy, audit_path=args.audit,
-        verifier=TokenVerifier(**identity), allowed_hosts=['127.0.0.1','localhost'])
+        verifier=TokenVerifier(**identity), allowed_hosts=['127.0.0.1','localhost'],
+        enable_campaigns=args.enable_campaigns)
     import uvicorn
     # No public bind flag, reload, extra workers, proxy trust or access-token logging.
     # A reviewed TLS proxy may reach this loopback listener on the same host.
