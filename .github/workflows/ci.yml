@@ -2,7 +2,12 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: virtual-lab-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -17,11 +22,19 @@ jobs:
         python-version: ['3.10', '3.11', '3.12']
     env:
       QT_QPA_PLATFORM: offscreen
+      # Exercise the bundled local viewer on GPU-less CI; not a runtime default.
+      QTWEBENGINE_CHROMIUM_FLAGS: --use-gl=angle --use-angle=swiftshader
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install Linux Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: python -m pip install uv==0.13.6
       - name: Install locked offline runtime and test dependencies
         run: uv sync --locked --extra cockpit --extra pilot --extra dev
@@ -40,11 +53,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       QT_QPA_PLATFORM: offscreen
+      QTWEBENGINE_CHROMIUM_FLAGS: --use-gl=angle --use-angle=swiftshader
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Linux Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: python -m pip install uv==0.13.6
       - run: uv sync --locked --extra cockpit --extra pilot --extra ai --extra dev
       - run: uv run --no-sync python -m pytest -q
@@ -85,8 +105,12 @@ jobs:
           path: dependency-audit.json
 
   research-service:
-    name: Authenticated read-only research service
-    runs-on: ubuntu-latest
+    name: Authenticated research service (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -108,15 +132,23 @@ jobs:
         run: uv run --no-sync python -m pytest tests/application tests/integrations tests/research_service --junitxml=output/service-tests.xml -q
       - name: Qualify independent HTTP clients against synthetic data
         run: uv run --no-sync python -m scripts.verify_research_service --output output/service-http
+      - name: Qualify custom background research and revocation over HTTP
+        run: uv run --no-sync python -m scripts.verify_campaign_service --output output/campaign-http
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: research-service-synthetic-evidence
+          name: research-service-synthetic-evidence-${{ matrix.os }}
           path: |
             output/service-tests.xml
             output/service-http/validation.json
+            output/service-http/research-file-integrity.json
+            output/service-http/http-server.log
             output/service-http/verified-report.json
             output/service-http/fixture/service-audit.jsonl
+            output/campaign-http/validation.json
+            output/campaign-http/campaign-results.json
+            output/campaign-http/campaign-results.json.sha256
+            output/campaign-http/fixture/service-audit.jsonl
 
   build:
     name: Reproducible pilot wheel and manifest
@@ -124,11 +156,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SOURCE_DATE_EPOCH: '1793232000'
+      QTWEBENGINE_CHROMIUM_FLAGS: --use-gl=angle --use-angle=swiftshader
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Linux Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
       - run: python -m pip install uv==0.13.6
       - run: uv sync --locked --extra cockpit --extra pilot --extra dev
       - name: Build twice and verify package bytes

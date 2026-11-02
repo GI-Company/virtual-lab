@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "SimulationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "default": "numpy",
+          "title": "Backend",
+          "type": "string"
+        },
+        "compound": {
+          "default": "YC-001 hypothesis",
+          "title": "Compound",
+          "type": "string"
+        },
+        "concentration_um": {
+          "default": 1.0,
+          "title": "Concentration Um",
+          "type": "number"
+        },
+        "dt_h": {
+          "default": 0.025,
+          "title": "Dt H",
+          "type": "number"
+        },
+        "duration_h": {
+          "default": 48.0,
+          "title": "Duration H",
+          "type": "number"
+        },
+        "ec50_um": {
+          "default": 1.5,
+          "title": "Ec50 Um",
+          "type": "number"
+        },
+        "erad_multiplier": {
+          "default": 1.0,
+          "title": "Erad Multiplier",
+          "type": "number"
+        },
+        "members": {
+          "default": 128,
+          "title": "Members",
+          "type": "integer"
+        },
+        "model_id": {
+          "default": "rho_p23h",
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_parameters": {
+          "additionalProperties": true,
+          "title": "Model Parameters",
+          "type": "object"
+        },
+        "rescue_max": {
+          "default": 0.8,
+          "title": "Rescue Max",
+          "type": "number"
+        },
+        "seed": {
+          "default": 42,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "traffic_multiplier": {
+          "default": 1.0,
+          "title": "Traffic Multiplier",
+          "type": "number"
+        },
+        "variation": {
+          "default": 0.1,
+          "title": "Variation",
+          "type": "number"
+        }
+      },
+      "title": "SimulationInput",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "configs": {
+      "items": {
+        "$ref": "#/$defs/SimulationInput"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Configs",
+      "type": "array"
+    },
+    "max_runs": {
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Max Runs",
+      "type": "integer"
+    },
+    "max_seconds": {
+      "maximum": 86400,
+      "minimum": 1,
+      "title": "Max Seconds",
+      "type": "integer"
+    },
+    "objective": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Objective",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "title": "Request Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "objective",
+    "configs",
+    "max_runs",
+    "max_seconds"
+  ],
+  "title": "CreateCampaign",
+  "type": "object"
+}

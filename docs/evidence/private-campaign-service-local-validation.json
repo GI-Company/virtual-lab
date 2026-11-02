@@ -1,0 +1,67 @@
+{
+  "format": "virtuallab-private-campaign-service-local-validation-v1",
+  "validated_at_utc": "2026-11-01T20:18:55.955665+00:00",
+  "platform": "Darwin arm64",
+  "tests": {
+    "tests": 132,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "test_scope": [
+    "tests/application",
+    "tests/integrations",
+    "tests/research_service"
+  ],
+  "http_qualification": {
+    "format": "virtuallab-campaign-service-qualification-v1",
+    "verified_at": "2026-11-01T20:18:13.361054+00:00",
+    "passed": true,
+    "checks": {
+      "idempotent_create_and_conflict": true,
+      "background_progress_after_disconnect": true,
+      "custom_conditions_executed": true,
+      "three_independent_client_hashes_match": true,
+      "simulated_classification": true,
+      "altered_report_bytes_fail_recorded_digest": true,
+      "unrelated_account_denied": true,
+      "http_body_limit": true,
+      "completed_report_survives_process_restart": true,
+      "run_revocation_stops_background_work": true,
+      "project_revocation_denies_all_clients": true,
+      "audit_excludes_credentials_and_research_inputs": true
+    },
+    "report_sha256": "4f3c4db7bdc250683c0fd2416bd64703c9baf72a203e76c8063aaab0bed0d0a2",
+    "campaign_id": "dd1e0f2f-f6b2-5c5c-ab5a-38f2e4bcfc50",
+    "reference": {
+      "instance_id": "950fe21a-5ed3-4cda-8b5b-9ab4d9f3b300",
+      "project_id": "f8714f19-f14e-4ccb-b0c9-0ad1af9357db",
+      "experiment_id": "50e77cc0-5597-4243-8636-f0e9d11175ed"
+    },
+    "data_origin": "synthetic",
+    "limits": [
+      "Local HTTP with ephemeral synthetic identity; no production account integration.",
+      "Independent HTTP clients are not the actual website, ChatGPT or desktop interfaces.",
+      "Only finite, acknowledged registered CPU simulations; no adaptive AI planner or wet-lab control.",
+      "Execution authority expires with the original service token (at most 15 minutes).",
+      "Checksums attest bytes, not a publisher signature or biological validity."
+    ]
+  },
+  "junit_sha256": "d2a6fcf325a90d9ea967a0ba3a2e2d7e6890a69c14da1c4663e45c6415eadf2a",
+  "secret_gate": {
+    "passed": true,
+    "reviewed_nonsecret_matches": 26,
+    "unexpected_findings": 0,
+    "verification": "offline"
+  },
+  "contract_schemas_match": true,
+  "cross_platform_ci_configured": [
+    "ubuntu-latest",
+    "macos-latest",
+    "windows-latest"
+  ],
+  "remote_ci_verified": false,
+  "deployed": false,
+  "gic_accounts_connected": false,
+  "private_chatgpt_tools_connected": false
+}

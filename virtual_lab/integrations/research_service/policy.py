@@ -27,6 +27,9 @@ class Grant(Strict):
     reports: bool = False
     spectrum: bool = False
     changes: bool = False
+    campaign_read: bool = False
+    campaign_write: bool = False
+    campaign_run: bool = False
 
 
 class AccessPolicy(Strict):

@@ -3,6 +3,21 @@
     "Grant": {
       "additionalProperties": false,
       "properties": {
+        "campaign_read": {
+          "default": false,
+          "title": "Campaign Read",
+          "type": "boolean"
+        },
+        "campaign_run": {
+          "default": false,
+          "title": "Campaign Run",
+          "type": "boolean"
+        },
+        "campaign_write": {
+          "default": false,
+          "title": "Campaign Write",
+          "type": "boolean"
+        },
         "changes": {
           "default": false,
           "title": "Changes",
