@@ -13,6 +13,7 @@ import time
 import httpx
 
 from scripts.research_service_fixture import seed_synthetic_fixture
+from scripts.service_process import launch_service, stop_service
 
 
 def fingerprints(root):
@@ -32,7 +33,7 @@ def verify(directory):
     checks = {}
     log = directory/'http-server.log'
     with log.open('wb') as stream:
-        process = subprocess.Popen(cmd,stdout=stream,stderr=stream)
+        process = launch_service(cmd, stream)
         try:
             base = f'http://127.0.0.1:{port}'
             deadline = time.monotonic()+20
@@ -88,13 +89,12 @@ def verify(directory):
                 for client in clients:
                     client.close()
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+            stop_service(process)
     after = fingerprints(fixture.root)
+    (directory/'research-file-integrity.json').write_text(json.dumps({
+        'before': before, 'after': after,
+        'changed': sorted(name for name in set(before) | set(after)
+                          if before.get(name) != after.get(name))}, indent=2)+'\n')
     assert before == after, 'Read-only HTTP session changed research state'
     checks['research_files_unchanged'] = True
     audit = [json.loads(line) for line in fixture.audit_path.read_text().splitlines()]

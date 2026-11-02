@@ -186,6 +186,11 @@ The rendering flags are confined to CI; application launch defaults are unchange
 Git attributes preserve LF source bytes across platforms, and the source-secret
 gate maps Windows path separators to the same exact reviewed entries without
 expanding its allowlist.
+Qualification child processes use a separate Windows process group and Uvicorn's
+graceful Ctrl+Break shutdown path so SQLite closes before file-integrity checks.
+The desktop dependency is constrained to the maintained Qt 6.11 patch line after
+Qt 6.12.0 produced a native shutdown abort in the Linux Python 3.10/3.11 stress
+test; the same stress assertions remain enabled for every supported version.
 
 ## Remaining product task list
 

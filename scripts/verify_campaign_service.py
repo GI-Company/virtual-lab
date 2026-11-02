@@ -14,6 +14,7 @@ import uuid
 import httpx
 
 from scripts.research_service_fixture import seed_synthetic_fixture
+from scripts.service_process import launch_service, stop_service
 from virtual_lab.settings.repository import SettingsRepository
 
 
@@ -42,7 +43,7 @@ def server(fixture, directory):
            '--identity', str(fixture.identity_path), '--audit', str(fixture.audit_path),
            '--port', str(port), '--enable-campaigns']
     with (directory/'http-server.log').open('ab') as stream:
-        process = subprocess.Popen(cmd, stdout=stream, stderr=stream)
+        process = launch_service(cmd, stream)
         try:
             base = f'http://127.0.0.1:{port}'
             deadline = time.monotonic()+20
@@ -59,12 +60,7 @@ def server(fixture, directory):
                 raise RuntimeError('Service readiness deadline exceeded')
             yield base
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            stop_service(process)
 
 
 def client(base, fixture, subject='synthetic-user-a', surface='web'):

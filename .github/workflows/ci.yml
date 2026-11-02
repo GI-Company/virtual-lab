@@ -2,7 +2,12 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: virtual-lab-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -136,6 +141,8 @@ jobs:
           path: |
             output/service-tests.xml
             output/service-http/validation.json
+            output/service-http/research-file-integrity.json
+            output/service-http/http-server.log
             output/service-http/verified-report.json
             output/service-http/fixture/service-audit.jsonl
             output/campaign-http/validation.json
